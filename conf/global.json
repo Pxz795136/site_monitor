@@ -1,0 +1,15 @@
+{
+  "monitor_groups": ["group1", "group2", "group3", "group4"],
+  "watchdog_check_interval": 60,
+  "watchdog_max_restarts": 5,
+  "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=0c3fc562-b088-47e3-ae53-f04bc9a2ab3b",
+  "watchdog_wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=c4da1895-7d6f-4795-8321-3d003c6e6856",
+  "smtp_server": "smtp.qq.com",
+  "smtp_port": 587,
+  "sender_email": "1153503050@qq.com", 
+  "sender_password": "csvbmoakykctjgib",
+  "receiver_email": "1591699181@qq.com,228194871@qq.com",
+  "watchdog_receiver_email": "1591699181@qq.com,228194871@qq.com",
+  "enable_wechat_alert": true,
+  "enable_email_alert": true
+} 

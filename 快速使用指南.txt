@@ -1,0 +1,151 @@
+# WAF监控系统使用说明
+
+## 1. 准备环境
+确保您的系统已经安装了 Python 3.6 或更高版本。
+通过以下命令安装所有依赖：
+
+```bash
+python bin/install.py
+```
+
+这个命令会自动安装必要的依赖库并创建所需的目录结构。
+
+## 2. 配置系统
+
+### 2.1 全局配置文件
+编辑 `conf/global.json` 文件，包含以下全局配置项：
+
+```json
+{
+  "monitor_groups": ["group1", "group2", "group3", "group4"],
+  "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key",
+  "smtp_server": "smtp.example.com",
+  "smtp_port": 587,
+  "sender_email": "sender@example.com",
+  "sender_password": "密码",
+  "receiver_email": "user1@example.com, user2@example.com"
+}
+```
+
+### 2.2 监控组配置
+每个监控组有独立的配置文件：`conf/group1.json`, `conf/group2.json` 等，内容示例：
+
+```json
+{
+  "group_name": "group1",
+  "monitor_interval": 60,
+  "unhealthy_threshold": 3,
+  "response_timeout": 2,
+  "enable_wechat_alert": true,
+  "enable_email_alert": true
+}
+```
+
+### 2.3 监控URL列表
+在 `conf/targets_group1.txt` 文件中添加要监控的URL，每行一个：
+
+```
+https://www.example.com/  ;示例站点1
+https://api.example.com/  ;示例站点2
+```
+
+## 3. 运行系统
+
+### 3.1 启动所有监控组
+```bash
+python bin/start_all.py
+```
+
+### 3.2 启动单个监控组
+```bash
+python bin/monitor_group1.py
+```
+
+### 3.3 停止所有监控
+```bash
+python bin/stop_all.py
+```
+
+### 3.4 查看系统状态
+```bash
+python bin/status.py
+```
+
+## 4. 日志说明
+
+系统日志位于 `logs` 目录下，每个监控组有独立的日志文件夹：
+
+- `monitor.log` - 监控状态日志
+- `health.log` - 健康状态日志
+- `alert.log` - 告警日志
+- `unhealthy.log` - 不健康状态日志
+
+日志每天午夜自动轮转，历史日志名称格式为 `log_type.log.yyyy-mm-dd`
+
+## 5. 告警机制
+
+当URL连续不健康次数达到阈值时，系统会发送告警。URL被视为不健康的条件:
+- HTTP状态码不是200
+- 响应时间超过配置的超时时间
+- 连接异常或其他错误
+
+告警支持两种方式：
+- 企业微信机器人（通过Webhook）
+- 邮件通知（支持多收件人）
+
+## 6. 常见问题
+
+### 6.1 如何修改监控目标？
+编辑对应的 `conf/targets_group*.txt` 文件，系统会自动加载最新的URL列表。
+
+### 6.2 如何调整监控频率？
+修改对应组的配置文件中的 `monitor_interval` 值（单位：秒）。
+
+### 6.3 如何关闭某种告警方式？
+在配置文件中将 `enable_wechat_alert` 或 `enable_email_alert` 设置为 `false`。
+
+## 附录：配置参数说明
+
+### A1. 全局配置参数 (conf/global.json)
+
+| 参数名 | 说明 | 示例值 |
+|--------|------|--------|
+| monitor_groups | 监控组列表，指定哪些组需要启动 | ["group1", "group2", "group3", "group4"] |
+| wechat_webhook_url | 企业微信机器人的Webhook地址 | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
+| site_wechat_webhook_url | 站点监控专用的企业微信地址(可选) | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
+| process_wechat_webhook_url | 进程监控专用的企业微信地址(可选) | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
+| smtp_server | 邮件服务器地址 | "smtp.example.com" |
+| smtp_port | 邮件服务器端口 | 587 |
+| sender_email | 发件人邮箱 | "sender@example.com" |
+| sender_password | 发件人密码 | "password" |
+| receiver_email | 收件人邮箱，多个收件人用逗号或分号分隔 | "user1@example.com, user2@example.com" |
+| site_receiver_email | 站点监控专用收件人邮箱(可选) | "alert@example.com" |
+| process_receiver_email | 进程监控专用收件人邮箱(可选) | "admin@example.com" |
+| enable_wechat_alert | 是否启用企业微信告警 | true |
+| enable_email_alert | 是否启用邮件告警 | true |
+| enable_site_wechat_alert | 是否启用站点监控专用企业微信告警 | true |
+| enable_process_wechat_alert | 是否启用进程监控专用企业微信告警 | true |
+| check_interval | 守护进程检查间隔，单位秒 | 120 |
+| max_restart_count | 最大重启尝试次数 | 3 |
+
+### A2. 监控组配置参数 (conf/group*.json)
+
+| 参数名 | 说明 | 示例值 |
+|--------|------|--------|
+| group_name | 监控组名称 | "group1" |
+| monitor_interval | 监控间隔时间，单位秒 | 60 |
+| unhealthy_threshold | 连续不健康次数阈值，达到此值时发送告警 | 3 |
+| response_timeout | 响应超时时间，单位秒 | 2 |
+| wechat_webhook_url | 企业微信机器人的Webhook地址（可选，覆盖全局配置） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
+| enable_wechat_alert | 该组是否启用企业微信告警 | true |
+| enable_email_alert | 该组是否启用邮件告警 | true |
+
+### A3. URL格式说明 (conf/targets_group*.txt)
+
+每行一个URL，支持添加注释：
+```
+https://www.example.com/  ;示例站点1 - 后面可以加注释说明
+https://api.example.com/status  ;API状态检查点
+# 这行是注释，会被忽略
+http://internal.example.com/health  ;内部健康检查
+``` 

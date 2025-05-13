@@ -1,0 +1,64 @@
+1. 准备环境
+确保您的系统已经安装了 Python 3 和 requests 库。如果没有，可以通过以下命令安装 requests：
+
+pip install requests
+
+2. 配置文件
+在代码的同一目录下，创建一个名为 config.json 的文件，其中包括以下配置项：
+
+json
+Copy code
+{
+  "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key",
+  "monitor_interval": 60,
+  "unhealthy_threshold": 3
+  “response_timeout” 2
+}
+wechat_webhook_url：您的企业微信机器人Webhook地址。
+monitor_interval：监控间隔时间，单位为秒。
+unhealthy_threshold：连续不健康的次数阈值，达到此值时发送告警。
+response_timeout：响应时延，大于此值时发送告警
+
+3. 监控的URL列表
+在代码的同一目录下，创建一个名为 input.txt 的文件。每行写一个要监控的URL，例如：
+
+http://www.example.com/
+https://www.another-example.com/
+
+4. 运行脚本
+保存代码为一个 .py 文件，例如 monitor.py，然后在终端中运行：
+
+python monitor.py
+
+5. 查看日志
+健康日志将记录在 health.log 文件中。
+不健康日志将记录在 unhealthy.log 文件中。
+您可以通过查看这些日志文件来了解监控的详细情况。
+
+6. 接收告警
+当监控到不健康的站点时，将通过企业微信机器人发送告警。
+当站点恢复正常时，也会发送恢复通知。
+注意事项
+请确保配置文件和输入文件的格式正确，且与代码文件在同一目录下。
+代码的异常处理主要集中在URL检测部分，对于配置文件和输入文件的错误可能没有详细处理，建议确保这些文件的正确性。
+
+
+
+
+
+
+告警推送场景
+1、状态码不等于200：如果检测到的HTTP状态码不等于200，且连续不健康次数达到unhealthy_threshold（默认为3次），则会推送告警。
+2、响应时延超过10秒：如果响应时延超过10秒，同样会连续不健康次数达到阈值后推送告警。
+3、连接异常或其他错误：如请求超时、域名解析失败等，连续不健康次数达到阈值后也会推送告警。
+4、网站恢复正常：如果一个URL连续不健康次数达到阈值后又恢复正常，会推送恢复通知。
+5、监控间隔
+6、全局监控间隔：通过monitor_interval配置项（默认为60秒）来控制整个监控循环的间隔。即完成一次所有URL的监控后，将等待该间隔时间再次开始监控。
+单个URL的监控间隔：代码中使用多线程对每个URL进行监控，因此单个URL的监控间隔实际上也是monitor_interval。即每个URL每隔monitor_interval秒会被监控一次。
+
+示例
+1、假设monitor_interval为60秒，unhealthy_threshold为3。
+2、如果某个URL在3次连续监控中状态码均不为200，则第3次监控后将推送告警。
+3、如果该URL在第4次监控中恢复正常，则将推送恢复通知。
+4、整个过程中，每次监控的间隔为60秒，即从开始监控到推送告警的总时间将是180秒。
+

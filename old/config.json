@@ -1,0 +1,12 @@
+{
+    "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=0c3fc562-b088-47e3-ae53-f04bc9a2ab3b",
+    "monitor_interval": 60,
+    "unhealthy_threshold": 2,
+    "response_timeout": 2,
+    "smtp_server": "smtp.qq.com",
+    "smtp_port": 587,
+    "sender_email": "1153503050@qq.com",
+    "sender_password": "csvbmoakykctjgib",
+    "receiver_email": "1591699181@qq.com"
+}
+
