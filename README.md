@@ -151,6 +151,26 @@ https://api.example.com/  ;示例站点2
 python bin/start_all.py
 ```
 
+### 在服务器环境中后台运行
+
+在服务器环境中，推荐使用以下命令让系统在后台运行，即使用户退出SSH连接后也能继续执行：
+
+```bash
+nohup python3 bin/start_all.py > nohup.out 2>&1 &
+```
+
+此命令会将输出重定向到nohup.out文件，可以通过以下命令查看日志：
+
+```bash
+tail -f nohup.out
+```
+
+您也可以将输出重定向到其他文件：
+
+```bash
+nohup python3 bin/start_all.py > logs/startup.log 2>&1 &
+```
+
 ### 启动单个监控组
 
 ```bash
