@@ -118,7 +118,7 @@ class URLMonitor:
                     # 如果之前发送过告警，现在恢复健康，则发送恢复通知
                     if self.url_health[url]['alerted']:
                         recovery_message = alerter.format_url_alert_message(
-                            url, waf_info, status_code, response_time
+                            url, waf_info, status_code, response_time, is_recovery=True
                         )
                         self.alerter.send_alert(recovery_message, 'info', alert_type='site')
                         self.loggers['alert'].info(f"URL已恢复正常: {url}")

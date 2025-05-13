@@ -353,7 +353,7 @@ def create_alerter(config, logger=None):
     return multi_alerter
 
 
-def format_url_alert_message(url, waf_info, status_code=None, response_time=None, error=None):
+def format_url_alert_message(url, waf_info, status_code=None, response_time=None, error=None, is_recovery=False):
     """
     格式化URL告警消息
     
@@ -362,6 +362,7 @@ def format_url_alert_message(url, waf_info, status_code=None, response_time=None
     @param {int} status_code - HTTP状态码
     @param {float} response_time - 响应时间（秒）
     @param {str} error - 错误信息（如果有）
+    @param {bool} is_recovery - 是否为恢复通知
     @returns {str} 格式化的告警消息
     """
     current_time = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -376,7 +377,12 @@ def format_url_alert_message(url, waf_info, status_code=None, response_time=None
     # 预先格式化状态码部分
     status_code_text = 'N/A' if status_code is None else str(status_code)
     
-    message = f"""## 站点监控告警 - {current_time}
+    # 为恢复通知添加特殊标记
+    title = "站点监控告警"
+    if is_recovery:
+        title = "站点监控通知 (已恢复正常)"
+    
+    message = f"""## {title} - {current_time}
 **网站URL**：{url}
 **所在WAF**：{waf_info}
 **状态码**：{status_code_text}
