@@ -232,7 +232,7 @@ class EmailAlerter(Alerter):
                 
                 msg.attach(MIMEText(html_message, 'html', 'utf-8'))
                 
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10)
                 server.starttls()
                 server.login(self.sender_email, self.sender_password)
                 server.sendmail(self.sender_email, [receiver], msg.as_string())

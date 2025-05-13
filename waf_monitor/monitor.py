@@ -94,55 +94,71 @@ class URLMonitor:
             if status_code != 200 or response_time > self.response_timeout:
                 with self.lock:
                     self.url_health[url]['count'] += 1
-                    alert_message = alerter.format_url_alert_message(
-                        url, waf_info, status_code, response_time
-                    )
-                    self.loggers['monitor'].warning(
-                        f"URL不健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
-                    )
-                    self.loggers['unhealthy'].warning(alert_message)
-                    
-                    # 连续不健康次数达到阈值时发送告警
-                    if self.url_health[url]['count'] % self.unhealthy_threshold == 0:
-                        self.alerter.send_alert(alert_message, 'warning', alert_type='site')
+                    need_alert = self.url_health[url]['count'] % self.unhealthy_threshold == 0
+                    current_count = self.url_health[url]['count']
+                    # 在锁内更新告警状态
+                    if need_alert:
                         self.url_health[url]['alerted'] = True
-                        self.loggers['alert'].warning(
-                            f"URL已连续 {self.url_health[url]['count']} 次不健康，已发送告警: {url}"
-                        )
+                
+                # 锁外执行日志记录和告警发送
+                alert_message = alerter.format_url_alert_message(
+                    url, waf_info, status_code, response_time
+                )
+                self.loggers['monitor'].warning(
+                    f"URL不健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
+                )
+                self.loggers['unhealthy'].warning(alert_message)
+                
+                # 连续不健康次数达到阈值时发送告警
+                if need_alert:
+                    self.alerter.send_alert(alert_message, 'warning', alert_type='site')
+                    self.loggers['alert'].warning(
+                        f"URL已连续 {current_count} 次不健康，已发送告警: {url}"
+                    )
             else:
                 with self.lock:
-                    self.loggers['health'].info(
-                        f"URL健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
-                    )
-                    
-                    # 如果之前发送过告警，现在恢复健康，则发送恢复通知
-                    if self.url_health[url]['alerted']:
-                        recovery_message = alerter.format_url_alert_message(
-                            url, waf_info, status_code, response_time, is_recovery=True
-                        )
-                        self.alerter.send_alert(recovery_message, 'info', alert_type='site')
-                        self.loggers['alert'].info(f"URL已恢复正常: {url}")
-                    
+                    # 检查是否之前状态为告警，需要发送恢复通知
+                    was_alerted = self.url_health[url]['alerted']
+                    # 更新状态
                     self.url_health[url]['count'] = 0
                     self.url_health[url]['alerted'] = False
+                
+                # 锁外执行日志记录
+                self.loggers['health'].info(
+                    f"URL健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
+                )
+                
+                # 如果之前发送过告警，现在恢复健康，则发送恢复通知
+                if was_alerted:
+                    recovery_message = alerter.format_url_alert_message(
+                        url, waf_info, status_code, response_time, is_recovery=True
+                    )
+                    self.alerter.send_alert(recovery_message, 'info', alert_type='site')
+                    self.loggers['alert'].info(f"URL已恢复正常: {url}")
         
         except Exception as e:
             with self.lock:
                 self.url_health[url]['count'] += 1
-                waf_info = self.url_to_waf.get(url, "未知WAF")
-                alert_message = alerter.format_url_alert_message(
-                    url, waf_info, error=str(e)
-                )
-                self.loggers['monitor'].warning(f"URL检查异常: {url}, 错误: {str(e)}")
-                self.loggers['unhealthy'].warning(alert_message)
-                
-                # 连续不健康次数达到阈值时发送告警
-                if self.url_health[url]['count'] % self.unhealthy_threshold == 0:
-                    self.alerter.send_alert(alert_message, 'warning', alert_type='site')
+                need_alert = self.url_health[url]['count'] % self.unhealthy_threshold == 0
+                current_count = self.url_health[url]['count']
+                # 在锁内更新告警状态
+                if need_alert:
                     self.url_health[url]['alerted'] = True
-                    self.loggers['alert'].warning(
-                        f"URL已连续 {self.url_health[url]['count']} 次不健康，已发送告警: {url}"
-                    )
+            
+            # 锁外执行日志记录和告警发送
+            waf_info = self.url_to_waf.get(url, "未知WAF")
+            alert_message = alerter.format_url_alert_message(
+                url, waf_info, error=str(e)
+            )
+            self.loggers['monitor'].warning(f"URL检查异常: {url}, 错误: {str(e)}")
+            self.loggers['unhealthy'].warning(alert_message)
+            
+            # 连续不健康次数达到阈值时发送告警
+            if need_alert:
+                self.alerter.send_alert(alert_message, 'warning', alert_type='site')
+                self.loggers['alert'].warning(
+                    f"URL已连续 {current_count} 次不健康，已发送告警: {url}"
+                )
     
     def monitor_urls(self):
         """
@@ -153,7 +169,7 @@ class URLMonitor:
         # 加载持久化的健康状态
         self.load_state()
         
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=min(32, os.cpu_count() * 4 or 4)) as executor:
             while self.running:
                 try:
                     # 重新加载配置
@@ -220,7 +236,16 @@ class URLMonitor:
                 
                 except Exception as e:
                     self.loggers['monitor'].error(f"监控循环出现异常: {str(e)}")
-                    time.sleep(10)  # 出错后等待一段时间再重试
+                    # 添加重试计数和退避时间
+                    retry_count = getattr(self, '_retry_count', 0) + 1
+                    self._retry_count = retry_count
+                    # 计算退避时间，最长不超过5分钟
+                    backoff_time = min(300, 10 * (2 ** (retry_count - 1)))
+                    self.loggers['monitor'].info(f"将在 {backoff_time} 秒后重试 (第 {retry_count} 次)")
+                    time.sleep(backoff_time)
+                else:
+                    # 成功执行后重置重试计数
+                    self._retry_count = 0
     
     def start(self):
         """
