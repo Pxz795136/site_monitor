@@ -160,8 +160,7 @@ class Watchdog:
             # 如果状态已经是"已停止"而不是"未知"，可能是手动停止的
             # 或者状态包含"手动停止"字样，也判断为手动停止
             if (current_status == "已停止" or 
-                "手动停止" in current_status or 
-                self.processes[group_name].restart_count == 0):
+                "手动停止" in current_status):
                 self.processes[group_name].status = "已手动停止"
                 self.logger.info(f"[正常状态] 进程 {group_name} 处于手动停止状态，无需重启和告警")
                 # 标记不需要告警和重启
