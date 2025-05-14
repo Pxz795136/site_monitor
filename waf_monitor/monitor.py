@@ -203,33 +203,57 @@ class URLMonitor:
                         self.loggers['monitor'].error(f"重新加载配置失败: {str(e)}")
                     
                     # 重新加载URL列表
-                    urls = self.load_targets()
-                    if not urls:
-                        self.loggers['monitor'].warning("没有找到有效的URL，将在下次循环重试")
+                    try:
+                        urls = self.load_targets()
+                        if not urls:
+                            self.loggers['monitor'].warning("没有找到有效的URL，将在下次循环重试")
+                            time.sleep(self.monitor_interval)
+                            continue
+                        
+                        self.loggers['monitor'].info(f"已加载 {len(urls)} 个URL")
+                    except Exception as e:
+                        self.loggers['monitor'].error(f"加载URL列表失败: {str(e)}")
                         time.sleep(self.monitor_interval)
                         continue
                     
-                    self.loggers['monitor'].info(f"已加载 {len(urls)} 个URL")
-                    
                     # 更新URL健康状态字典
-                    with self.lock:
-                        # 删除不再监控的URL
-                        for url in list(self.url_health.keys()):
-                            if url not in urls:
-                                del self.url_health[url]
-                        
-                        # 添加新的URL
-                        for url in urls:
-                            if url not in self.url_health:
-                                self.url_health[url] = {'count': 0, 'alerted': False}
+                    try:
+                        with self.lock:
+                            # 删除不再监控的URL
+                            for url in list(self.url_health.keys()):
+                                if url not in urls:
+                                    del self.url_health[url]
+                            
+                            # 添加新的URL
+                            for url in urls:
+                                if url not in self.url_health:
+                                    self.url_health[url] = {'count': 0, 'alerted': False}
+                    except Exception as e:
+                        self.loggers['monitor'].error(f"更新URL健康状态字典失败: {str(e)}")
                     
                     # 并行检查所有URL
-                    futures = [executor.submit(self.check_health, url) for url in urls]
-                    for future in futures:
-                        future.result()  # 等待所有检查完成
+                    try:
+                        futures = []
+                        for url in urls:
+                            try:
+                                futures.append(executor.submit(self.check_health, url))
+                            except Exception as url_e:
+                                self.loggers['monitor'].error(f"提交URL检查任务失败: {url}, 错误: {str(url_e)}")
+                        
+                        # 等待所有检查完成
+                        for future in futures:
+                            try:
+                                future.result()  # 等待检查完成
+                            except Exception as result_e:
+                                self.loggers['monitor'].error(f"获取URL检查结果失败: {str(result_e)}")
+                    except Exception as e:
+                        self.loggers['monitor'].error(f"URL检查过程出现异常: {str(e)}")
                     
                     # 保存健康状态
-                    self.save_state()
+                    try:
+                        self.save_state()
+                    except Exception as e:
+                        self.loggers['monitor'].error(f"保存健康状态失败: {str(e)}")
                     
                     # 等待下一次监控循环
                     time.sleep(self.monitor_interval)
@@ -252,7 +276,11 @@ class URLMonitor:
         启动监控
         """
         self.running = True
-        threading.Thread(target=self.monitor_urls, daemon=True).start()
+        # 将daemon=True改为daemon=False，防止主线程退出导致监控线程结束
+        monitor_thread = threading.Thread(target=self.monitor_urls, daemon=False)
+        monitor_thread.start()
+        # 保存线程引用，避免被垃圾回收
+        self._monitor_thread = monitor_thread
     
     def stop(self):
         """

@@ -22,6 +22,7 @@ except ImportError:
 
 from waf_monitor import utils
 from waf_monitor import monitor
+from waf_monitor import crash_handler
 
 GROUP_NAME = 'group4'
 
@@ -105,6 +106,24 @@ def main():
     except Exception as e:
         print(f"创建PID文件时出错: {str(e)}")
     
+    # 初始化崩溃处理系统
+    crash_handler_context = crash_handler.initialize(GROUP_NAME)
+    crash_logger = crash_handler_context['crash_logger']
+    crash_logger.info(f"{GROUP_NAME} 监控启动，PID: {current_pid}")
+    
+    # 检查上次崩溃
+    last_crash = crash_handler.check_last_crash(GROUP_NAME)
+    if last_crash:
+        crash_type = last_crash.get('crash_type', '未知')
+        crash_time = last_crash.get('timestamp', '未知时间')
+        crash_info = last_crash.get('crash_info', '未知原因')
+        crash_logger.warning(f"检测到上次程序异常退出: 类型={crash_type}, 时间={crash_time}, 原因={crash_info}")
+        print(f"\n警告: 检测到上次程序异常退出!")
+        print(f"类型: {crash_type}")
+        print(f"时间: {crash_time}")
+        print(f"原因: {crash_info}")
+        print(f"使用命令查看详细信息: python bin/crash_report.py {GROUP_NAME} --last\n")
+    
     # 注册信号处理
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -123,12 +142,24 @@ def main():
                 with open(pid_file, 'w') as f:
                     f.write(str(current_pid))
                 print(f"已重新创建PID文件，PID: {current_pid}")
+            
+            # 检查监控线程是否还在运行
+            if hasattr(url_monitor, '_monitor_thread') and not url_monitor._monitor_thread.is_alive():
+                crash_logger.warning(f"检测到监控线程已退出，正在重新启动...")
+                print(f"检测到监控线程已退出，正在重新启动...")
+                # 重新启动监控线程
+                url_monitor.start()
+                print(f"监控线程已重新启动")
+            
+            # 每10秒检查一次
             time.sleep(10)
     
     except KeyboardInterrupt:
         print("收到中断信号，正在退出...")
+        crash_logger.info("收到键盘中断信号，程序正常退出")
     
     except Exception as e:
+        crash_logger.error(f"监控器运行出错: {str(e)}")
         print(f"监控器运行出错: {str(e)}")
         # 异常情况下也清理PID文件
         try:

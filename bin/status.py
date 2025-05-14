@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-WAF监控 - 查看所有监控组状态
+WAF监控 - 系统状态查看脚本
 """
 
 import os
 import sys
-import json
 import time
+import json
+import argparse
 from datetime import datetime
-import psutil
 
 # 添加项目根目录到Python路径
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,233 +17,193 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 from waf_monitor import utils
+from waf_monitor import crash_handler
+
+# 定义监控组
+GROUPS = ['group1', 'group2', 'group3', 'group4']
 
 
-def get_group_status(group_name):
+def check_group_status(group_name, show_crash=False):
     """
-    获取指定组的状态信息
+    检查指定监控组的状态
     
-    @param {str} group_name - 组名称
+    @param {str} group_name - 监控组名称
+    @param {bool} show_crash - 是否显示崩溃信息
     @returns {dict} 状态信息
     """
-    status = {
-        'group_name': group_name,
-        'running': False,
-        'pid': None,
-        'cpu_percent': None,
-        'memory_percent': None,
-        'start_time': None,
-        'uptime': None,
-        'url_count': 0,
-        'target_file': os.path.join(project_root, 'conf', f'targets_{group_name}.txt'),
-        'config_file': os.path.join(project_root, 'conf', f'{group_name}.json'),
-        'state_file': os.path.join(project_root, 'data', f'state_{group_name}.json')
-    }
-    
-    # 检查进程状态
+    # 获取进程ID
     pid = utils.load_pid(group_name)
-    status['pid'] = pid
     
-    if pid and utils.is_process_running(pid):
-        status['running'] = True
-        
-        # 获取进程信息
+    # 检查进程是否运行
+    is_running = False
+    if pid:
+        is_running = utils.is_process_running(pid)
+    
+    # 获取监控状态数据
+    state_data = utils.load_state(group_name) or {}
+    
+    # 获取最后心跳时间
+    last_activity_file = os.path.join(project_root, 'data', f"last_activity_{group_name}.json")
+    last_activity_time = None
+    last_activity_type = None
+    
+    if os.path.exists(last_activity_file):
         try:
-            process = psutil.Process(pid)
-            status['cpu_percent'] = process.cpu_percent(interval=0.1)
-            status['memory_percent'] = process.memory_percent()
-            status['start_time'] = datetime.fromtimestamp(process.create_time()).strftime('%Y-%m-%d %H:%M:%S')
-            uptime_seconds = time.time() - process.create_time()
-            days, remainder = divmod(uptime_seconds, 86400)
-            hours, remainder = divmod(remainder, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            status['uptime'] = f"{int(days)}天 {int(hours)}小时 {int(minutes)}分钟 {int(seconds)}秒"
-        except Exception as e:
-            print(f"获取进程 {pid} 信息时出错: {str(e)}")
-    
-    # 加载URL数量
-    try:
-        urls, _ = utils.load_config(group_name, 'targets')
-        status['url_count'] = len(urls)
-    except Exception:
-        pass
-    
-    # 加载状态文件
-    try:
-        state = utils.load_state(group_name)
-        if state:
-            status['url_health'] = state
-    except Exception:
-        pass
-    
-    # 添加watchdog状态信息（如果存在）
-    watchdog_file = os.path.join(project_root, 'data', 'watchdog.json')
-    if os.path.exists(watchdog_file):
-        try:
-            with open(watchdog_file, 'r', encoding='utf-8') as f:
-                watchdog_data = json.load(f)
-                if group_name in watchdog_data:
-                    status['restart_count'] = watchdog_data[group_name].get('restart_count', 0)
-                    status['watchdog_status'] = watchdog_data[group_name].get('status', '未知')
-        except Exception:
+            with open(last_activity_file, 'r', encoding='utf-8') as f:
+                activity_data = json.load(f)
+                timestamp = activity_data.get('timestamp')
+                if timestamp:
+                    try:
+                        last_activity_time = datetime.fromisoformat(timestamp)
+                    except:
+                        last_activity_time = timestamp
+                last_activity_type = activity_data.get('type')
+        except:
             pass
     
-    return status
-
-
-def get_watchdog_status():
-    """
-    获取监控守护进程状态
+    # 获取崩溃信息
+    crash_info = None
+    if show_crash:
+        crash_info = crash_handler.check_last_crash(group_name)
     
-    @returns {dict} 状态信息
-    """
-    status = {
-        'running': False,
-        'pid': None,
-        'cpu_percent': None,
-        'memory_percent': None,
-        'start_time': None,
-        'uptime': None,
-        'groups': [],
-        'state_file': os.path.join(project_root, 'data', 'watchdog.json')
+    # 获取监控URL数量
+    url_count = len(state_data) if state_data else 0
+    
+    # 计算不健康URL数量
+    unhealthy_count = 0
+    alerted_count = 0
+    
+    if state_data:
+        for url, status in state_data.items():
+            if status.get('count', 0) > 0:
+                unhealthy_count += 1
+            if status.get('alerted', False):
+                alerted_count += 1
+    
+    # 生成结果
+    result = {
+        'group': group_name,
+        'pid': pid,
+        'running': is_running,
+        'url_count': url_count,
+        'unhealthy_count': unhealthy_count,
+        'alerted_count': alerted_count,
+        'last_activity_time': last_activity_time,
+        'last_activity_type': last_activity_type,
+        'crash_info': crash_info
     }
     
-    # 查找watchdog进程
-    watchdog_pid_file = os.path.join(project_root, 'data', 'watchdog.pid')
-    try:
-        if os.path.exists(watchdog_pid_file):
-            with open(watchdog_pid_file, 'r') as f:
-                pid = int(f.read().strip())
-            
-            status['pid'] = pid
-            
-            # 检查进程是否存在
-            if utils.is_process_running(pid):
-                status['running'] = True
-                
-                # 获取进程信息
-                try:
-                    process = psutil.Process(pid)
-                    status['cpu_percent'] = process.cpu_percent(interval=0.1)
-                    status['memory_percent'] = process.memory_percent()
-                    status['start_time'] = datetime.fromtimestamp(process.create_time()).strftime('%Y-%m-%d %H:%M:%S')
-                    uptime_seconds = time.time() - process.create_time()
-                    days, remainder = divmod(uptime_seconds, 86400)
-                    hours, remainder = divmod(remainder, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    status['uptime'] = f"{int(days)}天 {int(hours)}小时 {int(minutes)}分钟 {int(seconds)}秒"
-                except Exception as e:
-                    print(f"获取进程 {pid} 信息时出错: {str(e)}")
-    except Exception as e:
-        print(f"检查watchdog状态时出错: {str(e)}")
-    
-    # 加载watchdog状态文件
-    try:
-        if os.path.exists(status['state_file']):
-            with open(status['state_file'], 'r', encoding='utf-8') as f:
-                watchdog_state = json.load(f)
-                status['groups'] = list(watchdog_state.keys())
-                status['state'] = watchdog_state
-    except Exception as e:
-        print(f"读取watchdog状态文件时出错: {str(e)}")
-    
-    return status
+    return result
 
 
-def print_status_table(group_statuses, watchdog_status):
+def format_group_status(status, verbose=False):
     """
-    打印状态表格
+    格式化组状态信息为可读字符串
     
-    @param {list} group_statuses - 组状态列表
-    @param {dict} watchdog_status - 监控守护进程状态
+    @param {dict} status - 状态信息
+    @param {bool} verbose - 是否显示详细信息
+    @returns {str} 格式化的状态信息
     """
-    print("\n" + "=" * 90)
-    print("WAF监控系统状态")
-    print("=" * 90)
+    group = status['group']
+    pid = status['pid']
+    running = status['running']
+    url_count = status['url_count']
+    unhealthy_count = status['unhealthy_count']
+    alerted_count = status['alerted_count']
+    last_activity_time = status['last_activity_time']
+    last_activity_type = status['last_activity_type']
+    crash_info = status['crash_info']
     
-    # 打印监控守护进程状态
-    print("\n[监控守护进程]")
-    print(f"运行状态: {'✅ 运行中' if watchdog_status['running'] else '❌ 已停止'}")
-    if watchdog_status['running']:
-        print(f"进程ID: {watchdog_status['pid']}")
-        print(f"CPU占用: {watchdog_status['cpu_percent']}%")
-        print(f"内存占用: {watchdog_status['memory_percent']:.2f}%")
-        print(f"启动时间: {watchdog_status['start_time']}")
-        print(f"运行时长: {watchdog_status['uptime']}")
-        print(f"监控的组: {', '.join(watchdog_status['groups'])}")
+    # 格式化最后活动时间
+    if isinstance(last_activity_time, datetime):
+        last_activity_time_str = last_activity_time.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        last_activity_time_str = str(last_activity_time) if last_activity_time else "未知"
     
-    # 打印各监控组状态
-    print("\n[监控组状态]")
-    print("-" * 90)
-    print("{:<10} {:<18} {:<10} {:<12} {:<12} {:<10} {:<10}".format(
-        "组名", "状态", "进程ID", "CPU占用", "内存占用", "URL数量", "重启次数"
-    ))
-    print("-" * 90)
+    # 基本状态信息
+    if running:
+        status_str = f"[运行中] {group} (PID: {pid})"
+        if last_activity_type == 'heartbeat':
+            status_str += f" - 最后心跳: {last_activity_time_str}"
+    else:
+        status_str = f"[已停止] {group}"
+        if last_activity_type:
+            status_str += f" - 最后活动: {last_activity_type} ({last_activity_time_str})"
     
-    # 标记是否有异常状态
-    has_error = False
+    # URL状态信息
+    url_status = f"URL: 总数={url_count}"
+    if url_count > 0:
+        url_status += f", 不健康={unhealthy_count}, 已告警={alerted_count}"
     
-    for status in group_statuses:
-        # 确定状态文本
-        if 'watchdog_status' in status and status['watchdog_status'] == "已停止 - 超过最大重启次数":
-            status_text = '⚠️ 超过最大重启次数'
-            has_error = True
-        elif status['running']:
-            status_text = '✅ 运行中'
-        else:
-            status_text = '❌ 已停止'
-            has_error = True
+    # 组合结果
+    result = [status_str, url_status]
+    
+    # 崩溃信息
+    if crash_info and verbose:
+        crash_type = crash_info.get('crash_type', '未知')
+        crash_info_str = crash_info.get('crash_info', '未知原因')
+        crash_time = None
         
-        # 显示重启计数
-        restart_count = status.get('restart_count', '-')
+        # 尝试从系统信息中获取时间
+        sys_info = crash_info.get('system_info', {})
+        if sys_info and 'timestamp' in sys_info:
+            try:
+                crash_time = datetime.fromisoformat(sys_info['timestamp'])
+                crash_time = crash_time.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                crash_time = sys_info['timestamp']
         
-        print("{:<10} {:<18} {:<10} {:<12} {:<12} {:<10} {:<10}".format(
-            status['group_name'],
-            status_text,
-            status['pid'] if status['pid'] else '-',
-            f"{status['cpu_percent']}%" if status['cpu_percent'] is not None else '-',
-            f"{status['memory_percent']:.2f}%" if status['memory_percent'] is not None else '-',
-            status['url_count'],
-            restart_count
-        ))
+        if not crash_time and 'timestamp' in crash_info:
+            crash_time = crash_info['timestamp']
+        
+        result.append(f"最近崩溃: 类型={crash_type}, 时间={crash_time}")
+        result.append(f"崩溃原因: {crash_info_str}")
+        result.append(f"查看详情: python bin/crash_report.py {group} --last")
     
-    print("-" * 90)
-    
-    # 如果有异常状态，显示处理建议
-    if has_error:
-        print("\n发现异常状态进程，可执行以下操作修复:")
-        print("1. 运行 'python bin/start_all.py' - 将自动修复重启计数和重新启动所有进程")
-        print("2. 运行 'python bin/stop_all.py' 然后 'python bin/start_all.py' - 完全停止后重新启动")
-    
-    print("\n")
+    return "\n    ".join(result)
 
 
 def main():
     """
-    主函数，显示所有监控组状态
+    主函数
     """
-    # 从全局配置获取监控组列表
-    try:
-        global_config = utils.load_global_config()
-        groups = global_config.get('monitor_groups', ['group1', 'group2', 'group3', 'group4'])
-    except Exception as e:
-        print(f"加载配置失败: {str(e)}")
-        groups = ['group1', 'group2', 'group3', 'group4']
+    parser = argparse.ArgumentParser(description='WAF监控系统状态查看工具')
+    parser.add_argument('--verbose', '-v', action='store_true', help='显示详细信息')
+    parser.add_argument('--group', '-g', type=str, help='指定监控组')
+    parser.add_argument('--watch', '-w', action='store_true', help='实时监控模式')
+    parser.add_argument('--interval', '-i', type=int, default=5, help='刷新间隔(秒)')
     
-    # 获取监控守护进程状态
-    watchdog_status = get_watchdog_status()
+    args = parser.parse_args()
     
-    # 获取各组状态
-    group_statuses = []
-    for group in groups:
-        status = get_group_status(group)
-        group_statuses.append(status)
+    groups = [args.group] if args.group else GROUPS
     
-    # 打印状态表格
-    print_status_table(group_statuses, watchdog_status)
-    
-    return 0
+    # 实时监控模式
+    if args.watch:
+        try:
+            while True:
+                os.system('clear' if os.name == 'posix' else 'cls')
+                print(f"WAF监控系统状态 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print("=" * 70)
+                
+                for group in groups:
+                    status = check_group_status(group, show_crash=True)
+                    print(format_group_status(status, verbose=args.verbose))
+                    print("-" * 70)
+                
+                print(f"\n按Ctrl+C退出，每{args.interval}秒刷新一次...")
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            print("\n已退出监控模式")
+    # 一次性显示模式
+    else:
+        print(f"WAF监控系统状态 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 70)
+        
+        for group in groups:
+            status = check_group_status(group, show_crash=True)
+            print(format_group_status(status, verbose=args.verbose))
+            print("-" * 70)
 
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    main() 
