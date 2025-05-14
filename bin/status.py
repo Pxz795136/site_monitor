@@ -122,11 +122,11 @@ def format_group_status(status, verbose=False):
     
     # 基本状态信息
     if running:
-        status_str = f"[运行中] {group} (PID: {pid})"
+        status_str = f"[🟢 运行中] {group} (PID: {pid})"
         if last_activity_type == 'heartbeat':
             status_str += f" - 最后心跳: {last_activity_time_str}"
     else:
-        status_str = f"[已停止] {group}"
+        status_str = f"[🔴 已停止] {group}"
         if last_activity_type:
             status_str += f" - 最后活动: {last_activity_type} ({last_activity_time_str})"
     
