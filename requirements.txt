@@ -2,7 +2,7 @@
 requests>=2.25.0
 
 # 系统和进程监控
-psutil>=5.8.0
+psutil>=5.4.0
 setproctitle>=1.2.0
 
 # 工具库

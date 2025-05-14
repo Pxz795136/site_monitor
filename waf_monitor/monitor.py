@@ -84,81 +84,134 @@ class URLMonitor:
         
         @param {str} url - 要检查的URL
         """
-        try:
-            response = requests.get(url, timeout=self.response_timeout)
-            status_code = response.status_code
-            response_time = response.elapsed.total_seconds()
-            
-            waf_info = self.url_to_waf.get(url, "未知WAF")
-            
-            if status_code != 200 or response_time > self.response_timeout:
-                with self.lock:
-                    self.url_health[url]['count'] += 1
-                    need_alert = self.url_health[url]['count'] % self.unhealthy_threshold == 0
-                    current_count = self.url_health[url]['count']
-                    # 在锁内更新告警状态
-                    if need_alert:
-                        self.url_health[url]['alerted'] = True
-                
-                # 锁外执行日志记录和告警发送
-                alert_message = alerter.format_url_alert_message(
-                    url, waf_info, status_code, response_time
-                )
-                self.loggers['monitor'].warning(
-                    f"URL不健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
-                )
-                self.loggers['unhealthy'].warning(alert_message)
-                
-                # 连续不健康次数达到阈值时发送告警
-                if need_alert:
-                    self.alerter.send_alert(alert_message, 'warning', alert_type='site')
-                    self.loggers['alert'].warning(
-                        f"URL已连续 {current_count} 次不健康，已发送告警: {url}"
-                    )
-            else:
-                with self.lock:
-                    # 检查是否之前状态为告警，需要发送恢复通知
-                    was_alerted = self.url_health[url]['alerted']
-                    # 更新状态
-                    self.url_health[url]['count'] = 0
-                    self.url_health[url]['alerted'] = False
-                
-                # 锁外执行日志记录
-                self.loggers['health'].info(
-                    f"URL健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
-                )
-                
-                # 如果之前发送过告警，现在恢复健康，则发送恢复通知
-                if was_alerted:
-                    recovery_message = alerter.format_url_alert_message(
-                        url, waf_info, status_code, response_time, is_recovery=True
-                    )
-                    self.alerter.send_alert(recovery_message, 'info', alert_type='site')
-                    self.loggers['alert'].info(f"URL已恢复正常: {url}")
+        retry_count = 0
+        max_retries = 3
+        retry_delay = 1  # 初始重试延迟(秒)
         
-        except Exception as e:
-            with self.lock:
-                self.url_health[url]['count'] += 1
-                need_alert = self.url_health[url]['count'] % self.unhealthy_threshold == 0
-                current_count = self.url_health[url]['count']
-                # 在锁内更新告警状态
-                if need_alert:
-                    self.url_health[url]['alerted'] = True
+        while retry_count <= max_retries:
+            try:
+                # 使用with语句确保请求资源正确释放
+                with requests.get(url, timeout=self.response_timeout) as response:
+                    status_code = response.status_code
+                    response_time = response.elapsed.total_seconds()
+                    
+                    waf_info = self.url_to_waf.get(url, "未知WAF")
+                    
+                    if status_code != 200 or response_time > self.response_timeout:
+                        with self.lock:
+                            self.url_health[url]['count'] += 1
+                            need_alert = self.url_health[url]['count'] % self.unhealthy_threshold == 0
+                            current_count = self.url_health[url]['count']
+                            # 在锁内更新告警状态
+                            if need_alert:
+                                self.url_health[url]['alerted'] = True
+                        
+                        # 锁外执行日志记录和告警发送
+                        alert_message = alerter.format_url_alert_message(
+                            url, waf_info, status_code, response_time
+                        )
+                        self.loggers['monitor'].warning(
+                            f"URL不健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
+                        )
+                        self.loggers['unhealthy'].warning(alert_message)
+                        
+                        # 连续不健康次数达到阈值时发送告警
+                        if need_alert:
+                            self.alerter.send_alert(alert_message, 'warning', alert_type='site')
+                            self.loggers['alert'].warning(
+                                f"URL已连续 {current_count} 次不健康，已发送告警: {url}"
+                            )
+                    else:
+                        with self.lock:
+                            # 检查是否之前状态为告警，需要发送恢复通知
+                            was_alerted = self.url_health[url]['alerted']
+                            # 更新状态
+                            self.url_health[url]['count'] = 0
+                            self.url_health[url]['alerted'] = False
+                        
+                        # 锁外执行日志记录
+                        self.loggers['health'].info(
+                            f"URL健康: {url}, 状态码: {status_code}, 响应时间: {response_time:.6f}s"
+                        )
+                        
+                        # 如果之前发送过告警，现在恢复健康，则发送恢复通知
+                        if was_alerted:
+                            recovery_message = alerter.format_url_alert_message(
+                                url, waf_info, status_code, response_time, is_recovery=True
+                            )
+                            self.alerter.send_alert(recovery_message, 'info', alert_type='site')
+                            self.loggers['alert'].info(f"URL已恢复正常: {url}")
+                
+                # 如果没有异常，跳出重试循环
+                break
             
-            # 锁外执行日志记录和告警发送
-            waf_info = self.url_to_waf.get(url, "未知WAF")
-            alert_message = alerter.format_url_alert_message(
-                url, waf_info, error=str(e)
-            )
-            self.loggers['monitor'].warning(f"URL检查异常: {url}, 错误: {str(e)}")
-            self.loggers['unhealthy'].warning(alert_message)
+            except requests.exceptions.Timeout as e:
+                # 超时错误，记录并重试
+                self.loggers['monitor'].warning(f"URL检查超时: {url}, 重试 ({retry_count+1}/{max_retries})")
+                error_msg = f"请求超时: {str(e)}"
+                retry_count += 1
+                if retry_count > max_retries:
+                    # 所有重试都失败，更新健康状态
+                    self._handle_request_error(url, error_msg)
+                else:
+                    # 指数退避重试
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数递增
             
-            # 连续不健康次数达到阈值时发送告警
+            except requests.exceptions.ConnectionError as e:
+                # 连接错误，记录并重试
+                self.loggers['monitor'].warning(f"URL连接错误: {url}, 重试 ({retry_count+1}/{max_retries})")
+                error_msg = f"连接错误: {str(e)}"
+                retry_count += 1
+                if retry_count > max_retries:
+                    # 所有重试都失败，更新健康状态
+                    self._handle_request_error(url, error_msg)
+                else:
+                    # 指数退避重试
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数递增
+            
+            except requests.exceptions.RequestException as e:
+                # 其他请求错误，记录并更新健康状态
+                self.loggers['monitor'].warning(f"URL请求错误: {url}, 错误: {str(e)}")
+                self._handle_request_error(url, f"请求错误: {str(e)}")
+                break
+                
+            except Exception as e:
+                # 捕获所有其他异常
+                self.loggers['monitor'].error(f"URL检查异常: {url}, 错误: {str(e)}")
+                self._handle_request_error(url, f"未知错误: {str(e)}")
+                break
+    
+    def _handle_request_error(self, url, error_msg):
+        """
+        处理请求错误的辅助方法
+        
+        @param {str} url - 请求的URL
+        @param {str} error_msg - 错误信息
+        """
+        with self.lock:
+            self.url_health[url]['count'] += 1
+            need_alert = self.url_health[url]['count'] % self.unhealthy_threshold == 0
+            current_count = self.url_health[url]['count']
+            # 在锁内更新告警状态
             if need_alert:
-                self.alerter.send_alert(alert_message, 'warning', alert_type='site')
-                self.loggers['alert'].warning(
-                    f"URL已连续 {current_count} 次不健康，已发送告警: {url}"
-                )
+                self.url_health[url]['alerted'] = True
+        
+        # 锁外执行日志记录和告警发送
+        waf_info = self.url_to_waf.get(url, "未知WAF")
+        alert_message = alerter.format_url_alert_message(
+            url, waf_info, error=error_msg
+        )
+        self.loggers['monitor'].warning(f"URL检查异常: {url}, 错误: {error_msg}")
+        self.loggers['unhealthy'].warning(alert_message)
+        
+        # 连续不健康次数达到阈值时发送告警
+        if need_alert:
+            self.alerter.send_alert(alert_message, 'warning', alert_type='site')
+            self.loggers['alert'].warning(
+                f"URL已连续 {current_count} 次不健康，已发送告警: {url}"
+            )
     
     def monitor_urls(self):
         """

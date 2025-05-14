@@ -236,6 +236,16 @@ def setup_signal_handlers(group_name):
             
             # 正常退出
             sys.exit(0)
+        elif sig == signal.SIGPIPE:
+            # 特殊处理SIGPIPE信号（Broken pipe），记录但不终止程序
+            save_crash_info(
+                group_name,
+                "signal",
+                f"收到管道破裂信号: {signal_name} ({sig})",
+                {"stack_trace": ''.join(traceback.format_stack(frame))}
+            )
+            save_last_activity(group_name, "signal", signal_name)
+            crash_logger.warning(f"收到管道破裂信号(SIGPIPE)，程序将继续运行")
         else:
             # 记录其他信号但不退出
             save_crash_info(
@@ -246,7 +256,7 @@ def setup_signal_handlers(group_name):
             )
     
     # 注册信号处理器
-    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGHUP]:
+    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGPIPE]:
         try:
             signal.signal(sig, signal_handler)
         except (AttributeError, ValueError):

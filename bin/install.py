@@ -2,17 +2,29 @@
 # -*- coding: utf-8 -*-
 """
 WAF监控 - 安装依赖脚本
+支持多种安装方式，自动适应不同环境
 """
 
 import os
 import sys
 import subprocess
 import platform
+import shutil
+import time
 
 # 添加项目根目录到Python路径
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
+
+
+def is_root():
+    """
+    检查是否以root权限运行
+    
+    @returns {bool} 是否为root权限
+    """
+    return os.geteuid() == 0 if hasattr(os, 'geteuid') else False
 
 
 def check_python_version():
@@ -32,26 +44,124 @@ def check_python_version():
     return True
 
 
-def install_package(package_name):
+def detect_system_type():
     """
-    安装Python包
+    检测系统类型
+    
+    @returns {str} 系统类型: 'rhel', 'debian', 'other'
+    """
+    if os.path.exists('/etc/redhat-release'):
+        return 'rhel'  # RHEL/CentOS
+    elif os.path.exists('/etc/debian_version'):
+        return 'debian'  # Debian/Ubuntu
+    else:
+        return 'other'
+
+
+def install_build_tools():
+    """
+    安装编译工具
+    
+    @returns {bool} 安装是否成功
+    """
+    print("正在检查编译工具...")
+    
+    # 检查gcc是否已安装
+    gcc_path = shutil.which('gcc')
+    if gcc_path:
+        print(f"已检测到gcc: {gcc_path}")
+        return True
+    
+    if not is_root():
+        print("需要安装编译工具，但未使用root权限运行")
+        print("请使用 sudo python3 bin/install.py 或安装必要的编译工具")
+        return False
+    
+    print("未检测到gcc，尝试安装编译工具...")
+    system_type = detect_system_type()
+    
+    try:
+        if system_type == 'rhel':
+            print("检测到RHEL/CentOS系统，安装gcc和python3-devel...")
+            subprocess.check_call(['yum', 'install', '-y', 'gcc', 'python3-devel'])
+            print("编译工具安装成功")
+            return True
+        elif system_type == 'debian':
+            print("检测到Debian/Ubuntu系统，安装gcc和python3-dev...")
+            subprocess.check_call(['apt-get', 'update'])
+            subprocess.check_call(['apt-get', 'install', '-y', 'gcc', 'python3-dev'])
+            print("编译工具安装成功")
+            return True
+        else:
+            print("无法确定系统类型，请手动安装gcc和Python开发包")
+            return False
+    except subprocess.CalledProcessError as e:
+        print(f"安装编译工具失败: {str(e)}")
+        return False
+
+
+def install_system_packages():
+    """
+    使用系统包管理器安装依赖
+    
+    @returns {bool} 安装是否成功
+    """
+    if not is_root():
+        print("需要安装系统包，但未使用root权限运行")
+        print("请使用 sudo python3 bin/install.py 或手动安装必要的系统包")
+        return False
+    
+    print("尝试使用系统包管理器安装依赖...")
+    system_type = detect_system_type()
+    
+    try:
+        if system_type == 'rhel':
+            print("检测到RHEL/CentOS系统")
+            # 安装EPEL仓库
+            subprocess.check_call(['yum', 'install', '-y', 'epel-release'])
+            # 安装系统依赖
+            subprocess.check_call(['yum', 'install', '-y', 'python3-psutil', 'python3-requests', 'python3-setuptools', 'python3-pip', 'python3-yaml', 'python3-dateutil'])
+            return True
+        elif system_type == 'debian':
+            print("检测到Debian/Ubuntu系统")
+            subprocess.check_call(['apt-get', 'update'])
+            subprocess.check_call(['apt-get', 'install', '-y', 'python3-psutil', 'python3-requests', 'python3-setuptools', 'python3-pip', 'python3-yaml', 'python3-dateutil'])
+            return True
+        else:
+            print("无法确定系统类型，无法使用系统包管理器")
+            return False
+    except subprocess.CalledProcessError as e:
+        print(f"使用系统包管理器安装依赖失败: {str(e)}")
+        return False
+
+
+def install_pip_package(package_name, mirror_url=None):
+    """
+    使用pip安装单个包
     
     @param {str} package_name - 包名称
+    @param {str} mirror_url - 镜像源URL
     @returns {bool} 安装是否成功
     """
     print(f"正在安装 {package_name}...")
+    cmd = [sys.executable, "-m", "pip", "install", package_name]
+    
+    if mirror_url:
+        cmd.extend(["-i", mirror_url])
+    
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+        subprocess.check_call(cmd)
         return True
     except subprocess.CalledProcessError as e:
         print(f"安装 {package_name} 失败: {str(e)}")
         return False
 
 
-def install_requirements():
+def install_requirements(use_mirror=True):
     """
-    安装requirements.txt中的所有依赖
+    使用pip安装requirements.txt中的所有依赖
     
+    @param {bool} use_mirror - 是否使用镜像源
     @returns {bool} 安装是否成功
     """
     requirements_file = os.path.join(project_root, 'requirements.txt')
@@ -60,12 +170,66 @@ def install_requirements():
         print(f"要求文件不存在: {requirements_file}")
         return False
     
-    print(f"正在安装依赖...")
+    print(f"正在使用pip安装依赖...")
+    
+    # 设置镜像源
+    mirror_url = "https://pypi.tuna.tsinghua.edu.cn/simple" if use_mirror else None
+    if mirror_url:
+        print(f"使用镜像源: {mirror_url}")
+    
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", requirements_file])
+        cmd = [sys.executable, "-m", "pip", "install", "-r", requirements_file]
+        if mirror_url:
+            cmd.extend(["-i", mirror_url])
+        
+        subprocess.check_call(cmd)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"安装依赖失败: {str(e)}")
+        print(f"使用pip安装依赖失败: {str(e)}")
+        return False
+
+
+def install_minimal_requirements(use_mirror=True):
+    """
+    安装最小化的依赖集
+    
+    @param {bool} use_mirror - 是否使用镜像源
+    @returns {bool} 安装是否成功
+    """
+    print("安装最小化依赖...")
+    
+    # 创建临时的最小化requirements文件
+    temp_requirements = os.path.join(project_root, 'requirements_minimal.txt')
+    
+    try:
+        with open(temp_requirements, 'w') as f:
+            f.write("""
+# 可能需要的额外包
+setproctitle>=1.2.0
+jsonschema>=3.2.0
+            """)
+        
+        # 使用镜像源安装
+        mirror_url = "https://pypi.tuna.tsinghua.edu.cn/simple" if use_mirror else None
+        cmd = [sys.executable, "-m", "pip", "install", "-r", temp_requirements, "--skip-installed"]
+        if mirror_url:
+            cmd.extend(["-i", mirror_url])
+        
+        subprocess.check_call(cmd)
+        
+        # 清理临时文件
+        if os.path.exists(temp_requirements):
+            os.remove(temp_requirements)
+        
+        return True
+    except Exception as e:
+        print(f"安装最小化依赖失败: {str(e)}")
+        # 清理临时文件
+        if os.path.exists(temp_requirements):
+            try:
+                os.remove(temp_requirements)
+            except:
+                pass
         return False
 
 
@@ -81,23 +245,34 @@ def create_requirements():
         print(f"要求文件已存在: {requirements_file}")
         return True
     
-    requirements = [
-        "requests>=2.25.0",
-        "psutil>=5.8.0",
-        "setproctitle>=1.2.2",
-        "urllib3>=1.26.0,<2.0.0",
-        "certifi>=2021.5.30",
-        "charset-normalizer>=2.0.0",
-        "idna>=2.10",
-        "PyYAML>=6.0",
-        "python-dateutil>=2.8.2",
-        "pytz>=2021.1",
-        "six>=1.16.0"
-    ]
+    requirements = """# 网络和HTTP请求
+requests>=2.25.0
+
+# 系统和进程监控
+psutil>=5.4.0
+setproctitle>=1.2.0
+
+# 工具库
+python-dateutil>=2.8.0
+
+# 邮件和消息发送
+pyyaml>=5.4.0
+jsonschema>=3.2.0
+
+# 开发和测试
+pytest>=6.2.0
+
+urllib3>=1.26.0,<2.0.0
+certifi>=2021.5.30
+charset-normalizer>=2.0.0
+idna>=2.10
+pytz>=2021.1
+six>=1.16.0
+"""
     
     try:
         with open(requirements_file, 'w') as f:
-            f.write("\n".join(requirements))
+            f.write(requirements)
         print(f"已创建要求文件: {requirements_file}")
         return True
     except Exception as e:
@@ -166,39 +341,94 @@ def set_script_permissions():
 
 def main():
     """
-    主函数
+    主函数 - 支持多种安装方式
     """
-    print("=" * 50)
+    start_time = time.time()
+    
+    print("=" * 60)
     print("WAF监控系统依赖安装")
-    print("=" * 50)
+    print("=" * 60)
     
     # 检查Python版本
     if not check_python_version():
         return 1
     
     # 创建目录结构
+    print("\n[1/5] 创建目录结构...")
     if not setup_directories():
         return 1
     
     # 创建requirements.txt
+    print("\n[2/5] 检查依赖文件...")
     if not create_requirements():
         return 1
     
-    # 安装依赖
-    if not install_requirements():
-        return 1
+    # 安装策略：先尝试系统包管理器，再尝试编译安装，最后尝试最小化安装
+    print("\n[3/5] 安装依赖...")
+    
+    # 尝试方法1：使用系统包管理器安装
+    system_install_ok = install_system_packages()
+    if system_install_ok:
+        print("系统包安装成功，安装额外的pip依赖...")
+        pip_install_ok = install_minimal_requirements()
+    else:
+        # 尝试方法2：安装编译工具后使用pip安装
+        print("\n系统包安装失败，尝试编译安装...")
+        if install_build_tools():
+            print("编译工具安装成功，尝试使用pip编译安装...")
+            pip_install_ok = install_requirements()
+        else:
+            # 尝试方法3：直接使用pip安装（可能会失败）
+            print("\n无法安装编译工具，尝试直接使用pip安装...")
+            pip_install_ok = install_requirements()
+            
+            if not pip_install_ok:
+                print("\n所有安装方法都失败了。请手动安装以下依赖：")
+                print("1. 使用系统包管理器：")
+                print("   sudo yum install -y epel-release python3-psutil python3-requests  # RHEL/CentOS")
+                print("   sudo apt-get install -y python3-psutil python3-requests  # Debian/Ubuntu")
+                print("2. 或安装编译工具后使用pip：")
+                print("   sudo yum install -y gcc python3-devel  # RHEL/CentOS")
+                print("   sudo apt-get install -y gcc python3-dev  # Debian/Ubuntu")
+                print("   然后：")
+                print("   pip3 install -r requirements.txt")
+                return 1
     
     # 设置脚本可执行权限
+    print("\n[4/5] 设置脚本权限...")
     if not set_script_permissions():
-        return 1
+        print("警告：设置脚本权限失败，可能需要手动赋予可执行权限")
     
-    print("\n安装完成！可以通过以下命令启动系统:")
+    # 检查psutil是否可正常导入
+    print("\n[5/5] 验证安装...")
+    try:
+        import psutil
+        print(f"psutil导入成功，版本: {psutil.__version__}")
+    except ImportError:
+        print("警告：无法导入psutil，系统可能无法正常运行")
+    
+    # 显示完成信息
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    print("\n" + "=" * 60)
+    print(f"安装完成！用时 {duration:.2f} 秒")
+    
+    print("\n可以通过以下命令启动系统:")
     print(f"  {sys.executable} {os.path.join(script_dir, 'start_all.py')}")
     print("\n或者启动单个监控组:")
     print(f"  {sys.executable} {os.path.join(script_dir, 'monitor_group1.py')}")
+    print("=" * 60)
     
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\n安装被用户中断")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n安装过程出现错误: {str(e)}")
+        sys.exit(1) 

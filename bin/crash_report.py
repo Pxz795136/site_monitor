@@ -15,7 +15,28 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
-from waf_monitor import crash_handler
+# 先确认crash_handler模块存在
+try:
+    from waf_monitor import crash_handler
+except ImportError:
+    # 处理crash_handler模块不存在的情况
+    print("错误: 无法导入crash_handler模块。")
+    # 检查模块文件是否存在
+    crash_handler_path = os.path.join(project_root, 'waf_monitor', 'crash_handler.py')
+    if not os.path.exists(crash_handler_path):
+        print(f"模块文件不存在: {crash_handler_path}")
+        print("请确保waf_monitor目录下存在crash_handler.py文件")
+    else:
+        print(f"模块文件存在但无法导入，可能存在语法错误或依赖问题: {crash_handler_path}")
+        print("尝试手动导入模块以查看具体错误...")
+        try:
+            # 尝试获取更具体的导入错误
+            import waf_monitor
+            print(f"已成功导入waf_monitor包，但无法导入crash_handler模块")
+            print(f"可用模块: {dir(waf_monitor)}")
+        except Exception as import_err:
+            print(f"导入waf_monitor包失败: {import_err}")
+    sys.exit(1)
 
 
 def list_crashes(group_name):
