@@ -329,7 +329,7 @@ class URLMonitor:
         启动监控
         """
         self.running = True
-        # 将daemon=True改为daemon=False，防止主线程退出导致监控线程结束
+        # 明确设置非守护线程，防止主线程退出导致监控线程结束
         monitor_thread = threading.Thread(target=self.monitor_urls, daemon=False)
         monitor_thread.start()
         # 保存线程引用，避免被垃圾回收

@@ -10,6 +10,8 @@ import subprocess
 import time
 import json
 import psutil
+import argparse
+import signal
 
 # 添加项目根目录到Python路径
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +19,131 @@ project_root = os.path.dirname(script_dir)
 sys.path.insert(0, project_root)
 
 from waf_monitor import utils
+
+
+def setup_logging(log_file=None):
+    """
+    设置日志记录
+    
+    @param {str} log_file - 日志文件路径
+    """
+    import logging
+    
+    # 确保日志目录存在
+    logs_dir = os.path.join(project_root, 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # 如果没有指定日志文件，使用默认路径
+    if log_file is None:
+        # 创建一个启动脚本专用的目录
+        daemon_logs_dir = os.path.join(logs_dir, 'daemon')
+        os.makedirs(daemon_logs_dir, exist_ok=True)
+        log_file = os.path.join(daemon_logs_dir, 'startup.log')
+    
+    # 配置根日志记录器
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # 创建文件处理器
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # 创建日志格式
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # 添加处理器到日志记录器
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+
+def daemonize():
+    """
+    创建守护进程 - 统一模式，适用于所有平台，包括Linux和MacOS
+    
+    此方法确保进程能够在SSH会话断开后继续运行
+    """
+    # 添加SIGHUP信号处理器，防止SSH断开导致进程终止
+    def handle_sighup(sig, frame):
+        # 忽略SIGHUP信号
+        print("收到SIGHUP信号(SSH断开)，忽略并继续运行")
+    
+    try:
+        # 注册SIGHUP信号处理器，在Linux上防止SSH断开时终止进程
+        signal.signal(signal.SIGHUP, handle_sighup)
+    except (AttributeError, ValueError):
+        # 某些平台可能不支持SIGHUP
+        print("注意: 无法注册SIGHUP处理器，SSH断开可能会影响程序运行")
+    
+    print("创建后台进程...")
+    
+    # 确保日志目录存在
+    logs_dir = os.path.join(project_root, 'logs')
+    daemon_logs_dir = os.path.join(logs_dir, 'daemon')
+    os.makedirs(daemon_logs_dir, exist_ok=True)
+    
+    # 准备日志文件
+    daemon_log = os.path.join(daemon_logs_dir, 'daemon.log')
+    daemon_err = os.path.join(daemon_logs_dir, 'daemon_error.log')
+    
+    # 在所有平台上使用统一的方式创建子进程
+    args = [sys.executable, os.path.abspath(__file__), '--no-daemon',
+            f'--log-file={daemon_log}']
+    
+    # 确保data目录存在，用于存储PID文件
+    data_dir = os.path.join(project_root, 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    
+    pid_file = os.path.join(data_dir, 'daemon.pid')
+    
+    # 打开日志文件
+    out_log = open(daemon_log, 'w')
+    err_log = open(daemon_err, 'w')
+    
+    try:
+        # 创建子进程，确保完全脱离终端
+        process = subprocess.Popen(
+            args,
+            stdout=out_log,
+            stderr=err_log,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True  # 创建新会话，确保进程不受终端影响
+        )
+        
+        # 等待短暂时间确认进程启动
+        time.sleep(2)
+        
+        if utils.is_process_running(process.pid):
+            print(f"\033[32m[✓] 守护进程创建成功!\033[0m PID: {process.pid}")
+            print(f"\033[32m[✓] 启动日志将记录到: {daemon_log}\033[0m")
+            print("\033[32m[✓] 可以使用 'python3 bin/status.py' 查看监控状态\033[0m")
+            
+            # 写入PID文件
+            with open(pid_file, 'w') as f:
+                f.write(str(process.pid) + '\n')
+                
+            # 父进程退出，允许子进程继续在后台运行
+            sys.exit(0)
+        else:
+            print("\033[31m[✗] 守护进程创建失败!\033[0m 请检查日志获取详细信息")
+            print(f"\033[31m[✗] 错误日志: {daemon_err}\033[0m")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"\033[31m[✗] 创建守护进程时出错: {str(e)}\033[0m")
+        sys.exit(1)
+    finally:
+        # 关闭文件句柄
+        out_log.close()
+        err_log.close()
 
 
 def update_watchdog_status(group_name, pid):
@@ -171,14 +298,44 @@ def start_group(group_name):
     script_path = os.path.join(script_dir, f"monitor_{group_name}.py")
     
     try:
-        # 启动进程
-        process = subprocess.Popen(
-            [python_executable, script_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-            cwd=project_root
-        )
+        # 启动进程，确保完全独立并能在SSH断开后继续运行
+        logs_dir = os.path.join(project_root, 'logs', group_name)
+        os.makedirs(logs_dir, exist_ok=True)
+        log_file = os.path.join(logs_dir, "startup.log")
+        
+        # 创建启动脚本包装器，确保子进程能忽略SIGHUP信号
+        wrapper_script = os.path.join(project_root, 'data', f"start_{group_name}_wrapper.py")
+        with open(wrapper_script, 'w') as f:
+            f.write(f"""#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# 启动包装脚本 - 自动生成
+import os
+import sys
+import signal
+
+# 忽略SIGHUP信号，允许在SSH断开后继续运行
+try:
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+except (AttributeError, ValueError):
+    pass
+
+# 启动原始脚本
+os.execv("{python_executable}", ["{python_executable}", "{script_path}"])
+""")
+        
+        # 设置包装脚本可执行权限
+        os.chmod(wrapper_script, 0o755)
+        
+        with open(log_file, 'w') as log_f:
+            process = subprocess.Popen(
+                [python_executable, wrapper_script],
+                stdout=log_f,
+                stderr=log_f,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                cwd=project_root,
+                close_fds=True  # 确保关闭所有继承的文件描述符
+            )
         
         # 等待片刻确认进程启动
         time.sleep(2)
@@ -199,10 +356,99 @@ def start_group(group_name):
         return False
 
 
+def start_watchdog():
+    """
+    启动watchdog进程
+    
+    @returns {bool} 启动是否成功
+    """
+    print("正在启动监控进程守护程序...")
+    watchdog_script = os.path.join(script_dir, 'watchdog.py')
+    
+    try:
+        # 使用专用的日志文件
+        logs_dir = os.path.join(project_root, 'logs', 'watchdog')
+        os.makedirs(logs_dir, exist_ok=True)
+        log_file = os.path.join(logs_dir, 'startup.log')
+        
+        # 创建启动脚本包装器，确保子进程能忽略SIGHUP信号
+        wrapper_script = os.path.join(project_root, 'data', "start_watchdog_wrapper.py")
+        with open(wrapper_script, 'w') as f:
+            f.write(f"""#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# 启动包装脚本 - 自动生成
+import os
+import sys
+import signal
+
+# 忽略SIGHUP信号，允许在SSH断开后继续运行
+try:
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+except (AttributeError, ValueError):
+    pass
+
+# 启动原始脚本
+os.execv("{sys.executable}", ["{sys.executable}", "{watchdog_script}"])
+""")
+        
+        # 设置包装脚本可执行权限
+        os.chmod(wrapper_script, 0o755)
+        
+        with open(log_file, 'w') as log_f:
+            watchdog_process = subprocess.Popen(
+                [sys.executable, wrapper_script],
+                stdout=log_f,
+                stderr=log_f,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                cwd=project_root,
+                close_fds=True  # 确保关闭所有继承的文件描述符
+            )
+        
+        # 等待几秒钟确认watchdog进程已成功启动
+        time.sleep(5)
+        
+        # 验证watchdog进程是否真的在运行
+        if utils.is_process_running(watchdog_process.pid):
+            print(f"Watchdog进程已成功启动，PID: {watchdog_process.pid}")
+            return True
+        else:
+            print(f"警告: Watchdog进程似乎未能成功启动")
+            return False
+    except Exception as e:
+        print(f"启动Watchdog进程时出错: {str(e)}")
+        return False
+
+
 def main():
     """
     主函数，启动所有监控组
     """
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description="WAF监控 - 启动所有监控组")
+    parser.add_argument('--no-daemon', action='store_true', 
+                        help='不以守护进程方式运行（默认以守护进程方式运行）')
+    parser.add_argument('--log-file', 
+                        help='日志文件路径（仅在非守护进程模式下有效）')
+    args = parser.parse_args()
+    
+    # 如果以守护进程方式运行，执行脱离终端的过程
+    if not args.no_daemon:
+        print("以守护进程方式启动...")
+        daemonize()
+    else:
+        # 在非守护进程模式下也注册SIGHUP处理器，防止SSH断开导致进程终止
+        def handle_sighup(sig, frame):
+            print("收到SIGHUP信号(SSH断开)，忽略并继续运行")
+        
+        try:
+            signal.signal(signal.SIGHUP, handle_sighup)
+        except (AttributeError, ValueError):
+            print("注意: 无法注册SIGHUP处理器，SSH断开可能会影响程序运行")
+        
+        # 在非守护进程模式下设置日志
+        setup_logging(args.log_file)
+    
     # 从全局配置获取监控组列表
     try:
         global_config = utils.load_global_config()
@@ -218,28 +464,49 @@ def main():
     # 首先启动各组监控，确保所有进程状态稳定
     success_count = 0
     for group in groups:
-        if start_group(group):
-            success_count += 1
+        try:
+            if start_group(group):
+                success_count += 1
+        except Exception as e:
+            print(f"启动 {group} 监控组时出现未预期的错误: {str(e)}")
     
     # 等待一段时间，确保所有进程都已经稳定运行
-    print("等待所有监控进程稳定运行...")
-    time.sleep(5)
+    wait_time = global_config.get('startup_wait_time', 15)
+    print(f"等待所有监控进程稳定运行...({wait_time}秒)")
+    time.sleep(wait_time)
     
     # 最后才启动watchdog进程
-    print("正在启动监控进程守护程序...")
-    watchdog_script = os.path.join(script_dir, 'watchdog.py')
-    subprocess.Popen(
-        [sys.executable, watchdog_script],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        cwd=project_root
-    )
+    if not start_watchdog():
+        print("警告: Watchdog进程启动失败，监控进程可能无法自动恢复")
     
     print(f"启动完成，共成功启动 {success_count}/{len(groups)} 个监控组")
     
-    if success_count < len(groups):
-        return 1
+    # 在守护进程模式下，进程会继续运行在后台
+    # 在非守护进程模式下，进程会在此退出
+    if args.no_daemon:
+        # 如果用户使用Ctrl+C结束程序，优雅关闭
+        def handle_interrupt(sig, frame):
+            print("\n收到中断信号，正在优雅关闭...")
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, handle_interrupt)
+        signal.signal(signal.SIGTERM, handle_interrupt)
+        
+        print("\n程序正在前台运行中，按Ctrl+C可以退出...")
+        
+        # 保持主进程运行，直到用户中断
+        while True:
+            try:
+                time.sleep(60)  # 每分钟检查一次
+                # 可以在这里添加其他周期性任务
+            except KeyboardInterrupt:
+                print("\n收到用户中断，正在退出...")
+                break
+            except Exception as e:
+                print(f"主循环中发生错误: {str(e)}")
+        
+        if success_count < len(groups):
+            return 1
     return 0
 
 

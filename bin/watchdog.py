@@ -99,25 +99,41 @@ def main():
         if args.max_restarts:
             config['watchdog_max_restarts'] = args.max_restarts
         
-        print(f"[系统初始化] watchdog守护进程已启动，PID: {current_pid}")
+        # 获取检查间隔时间
+        check_interval = config.get('watchdog_check_interval', 60)
+        
+        print(f"[系统初始化] watchdog守护进程已启动，PID: {current_pid}，检查间隔: {check_interval}秒")
         
         # 创建并启动监控器
         dog = watchdog.create_watchdog(config)
         
-        # 启动主循环并定期检查PID文件
+        # 启动主循环并持续运行
+        print(f"[系统初始化] 开始主循环监控，每 {check_interval} 秒检查一次进程状态")
+        dog.running = True
+        
         while True:
-            # 定期检查PID文件是否存在，如果不存在则重新创建
-            if not os.path.exists(watchdog_pid_file):
-                print(f"[系统维护] watchdog PID文件不存在，正在重新创建...")
-                with open(watchdog_pid_file, 'w') as f:
-                    f.write(str(current_pid))
-                print(f"[系统维护] 已重新创建watchdog PID文件，PID: {current_pid}")
-            
-            # 执行一次检查循环
-            dog.check_all_processes()
-            
-            # 等待下一次检查
-            time.sleep(config.get('watchdog_check_interval', 60))
+            try:
+                # 定期检查PID文件是否存在，如果不存在则重新创建
+                if not os.path.exists(watchdog_pid_file):
+                    print(f"[系统维护] watchdog PID文件不存在，正在重新创建...")
+                    with open(watchdog_pid_file, 'w') as f:
+                        f.write(str(current_pid))
+                    print(f"[系统维护] 已重新创建watchdog PID文件，PID: {current_pid}")
+                
+                # 执行一次检查循环
+                dog.check_all_processes()
+                
+                # 等待下一次检查
+                time.sleep(check_interval)
+                
+            except KeyboardInterrupt:
+                print("[系统操作] 收到中断信号，正在退出...")
+                break
+                
+            except Exception as e:
+                print(f"[系统错误] 监控循环发生异常: {str(e)}")
+                # 休眠一段时间后继续
+                time.sleep(min(check_interval, 10))
     
     except KeyboardInterrupt:
         print("[系统操作] 收到中断信号，正在退出...")

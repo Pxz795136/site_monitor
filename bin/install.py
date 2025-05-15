@@ -292,6 +292,7 @@ def setup_directories():
         os.path.join(project_root, 'logs', 'group3'),
         os.path.join(project_root, 'logs', 'group4'),
         os.path.join(project_root, 'logs', 'watchdog'),
+        os.path.join(project_root, 'logs', 'daemon'),
         os.path.join(project_root, 'data'),
     ]
     

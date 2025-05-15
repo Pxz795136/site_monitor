@@ -9,6 +9,7 @@ import sys
 import time
 import signal
 import argparse
+import threading
 
 # 添加项目根目录到Python路径
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,12 +27,18 @@ from waf_monitor import crash_handler
 
 GROUP_NAME = 'group1'
 
+# 添加结束标志变量，用于主线程和监控线程之间的通信
+main_thread_running = True
 
 def signal_handler(sig, frame):
     """
     信号处理函数
     """
+    global main_thread_running
     print(f"收到信号 {sig}，正在退出...")
+    
+    # 设置退出标志
+    main_thread_running = False
     
     # 清理PID文件
     try:
@@ -180,6 +187,11 @@ def main():
     try:
         # 创建并启动监控器
         url_monitor = monitor.create_monitor(GROUP_NAME)
+        
+        # 确保监控线程设置为非守护线程，否则主线程退出后监控线程也会退出
+        if hasattr(url_monitor, '_monitor_thread'):
+            url_monitor._monitor_thread.daemon = False
+            
         url_monitor.start()
         
         # 保持主进程运行
@@ -189,7 +201,7 @@ def main():
         restart_threshold = 300  # 重启阈值(秒)
         last_restart_time = 0
         
-        while True:
+        while main_thread_running:
             try:
                 # 定期检查PID文件是否存在，如果不存在则重新创建
                 if not os.path.exists(pid_file):
@@ -225,6 +237,11 @@ def main():
                     last_restart_time = current_time
                     # 重新启动监控线程
                     url_monitor.start()
+                    
+                    # 确保新线程也设置为非守护线程
+                    if hasattr(url_monitor, '_monitor_thread'):
+                        url_monitor._monitor_thread.daemon = False
+                        
                     crash_logger.info(f"监控线程已重新启动")
                     print(f"监控线程已重新启动")
                 
@@ -248,27 +265,10 @@ def main():
         try:
             if os.path.exists(pid_file) and os.getpid() == current_pid:
                 os.remove(pid_file)
-                print(f"错误退出时已清理PID文件: {pid_file}")
+                print(f"异常情况下已清理PID文件: {pid_file}")
         except Exception as e:
             print(f"清理PID文件时出错: {str(e)}")
         return 1
-    
-    finally:
-        # 确保在所有情况下都尝试停止监控器
-        if url_monitor is not None:
-            try:
-                url_monitor.stop()
-                print("已停止监控器")
-            except Exception as e:
-                print(f"停止监控器时出错: {str(e)}")
-        
-        # 确保在所有情况下都尝试清理PID文件
-        try:
-            if os.path.exists(pid_file) and os.getpid() == current_pid:
-                os.remove(pid_file)
-                print(f"程序退出时已清理PID文件: {pid_file}")
-        except Exception as e:
-            print(f"清理PID文件时出错: {str(e)}")
     
     return 0
 

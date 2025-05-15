@@ -1,7 +1,8 @@
 {
   "monitor_groups": ["group1", "group2", "group3", "group4"],
-  "watchdog_check_interval": 60,
-  "watchdog_max_restarts": 5,
+  "watchdog_check_interval": 120,
+  "watchdog_max_restarts": 10,
+  "startup_wait_time": 15,
   "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=0c3fc562-b088-47e3-ae53-f04bc9a2ab3b",
   "watchdog_wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=c4da1895-7d6f-4795-8321-3d003c6e6856",
   "smtp_server": "smtp.qq.com",
