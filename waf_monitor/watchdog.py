@@ -475,7 +475,7 @@ def create_watchdog(config=None):
         logger.info(f"[系统初始化] 配置的收件人邮箱: {watchdog_config.get('receiver_email', [])}")
     
     # 监控组列表
-    groups = config.get('monitor_groups', ['group1', 'group2', 'group3', 'group4'])
+    groups = config.get('monitor_groups', ['group1', 'group2', 'group3', 'group4', 'group5', 'group6'])
     logger.info(f"[系统初始化] 配置的监控组: {groups}")
     
     # 其他配置参数

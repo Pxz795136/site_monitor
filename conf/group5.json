@@ -1,0 +1,9 @@
+{
+  "group_name": "group5",
+  "monitor_interval": 60,
+  "unhealthy_threshold": 2,
+  "response_timeout": 2,
+  "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=0c3fc562-b088-47e3-ae53-f04bc9a2ab3b",
+  "enable_wechat_alert": true,
+  "enable_email_alert": false
+} 

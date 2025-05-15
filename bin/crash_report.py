@@ -229,7 +229,7 @@ def main():
     主函数
     """
     parser = argparse.ArgumentParser(description='崩溃报告查询工具')
-    parser.add_argument('group', type=str, help='监控组名称 (group1, group2, group3, group4 或 all)')
+    parser.add_argument('group', type=str, help='监控组名称 (group1, group2, group3, group4, group5, group6 或 all)')
     parser.add_argument('index', type=int, nargs='?', help='崩溃记录索引，不提供则列出所有记录')
     parser.add_argument('--last', '-l', action='store_true', help='显示最近一次崩溃信息')
     
@@ -237,7 +237,7 @@ def main():
     
     # 处理 group=all 的情况
     if args.group.lower() == 'all':
-        groups = ['group1', 'group2', 'group3', 'group4']
+        groups = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
     else:
         groups = [args.group]
     

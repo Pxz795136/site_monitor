@@ -20,7 +20,7 @@ from waf_monitor import utils
 from waf_monitor import crash_handler
 
 # 定义监控组
-GROUPS = ['group1', 'group2', 'group3', 'group4']
+GROUPS = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
 
 
 def check_group_status(group_name, show_crash=False):

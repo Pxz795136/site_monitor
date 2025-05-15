@@ -1,5 +1,5 @@
 {
-  "monitor_groups": ["group1", "group2", "group3", "group4"],
+  "monitor_groups": ["group1", "group2", "group3", "group4", "group5", "group6"],
   "watchdog_check_interval": 120,
   "watchdog_max_restarts": 10,
   "startup_wait_time": 15,

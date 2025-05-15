@@ -29,6 +29,8 @@ def ensure_directories():
         os.path.join(project_root, 'logs', 'group2'),
         os.path.join(project_root, 'logs', 'group3'),
         os.path.join(project_root, 'logs', 'group4'),
+        os.path.join(project_root, 'logs', 'group5'),
+        os.path.join(project_root, 'logs', 'group6'),
         os.path.join(project_root, 'logs', 'watchdog'),
         os.path.join(project_root, 'logs', 'daemon'),
     ]
@@ -50,6 +52,8 @@ def migrate_logs():
         'group2_startup.log': os.path.join(logs_dir, 'group2', 'startup.log'),
         'group3_startup.log': os.path.join(logs_dir, 'group3', 'startup.log'),
         'group4_startup.log': os.path.join(logs_dir, 'group4', 'startup.log'),
+        'group5_startup.log': os.path.join(logs_dir, 'group5', 'startup.log'),
+        'group6_startup.log': os.path.join(logs_dir, 'group6', 'startup.log'),
         'watchdog_startup.log': os.path.join(logs_dir, 'watchdog', 'startup.log'),
         'daemon.log': os.path.join(logs_dir, 'daemon', 'daemon.log'),
         'daemon_error.log': os.path.join(logs_dir, 'daemon', 'daemon_error.log'),

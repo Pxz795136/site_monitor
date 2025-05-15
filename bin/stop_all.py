@@ -356,10 +356,10 @@ def main():
     # 从全局配置获取监控组列表
     try:
         global_config = utils.load_global_config()
-        groups = global_config.get('monitor_groups', ['group1', 'group2', 'group3', 'group4'])
+        groups = global_config.get('monitor_groups', ['group1', 'group2', 'group3', 'group4', 'group5', 'group6'])
     except Exception as e:
         print(f"加载配置失败: {str(e)}")
-        groups = ['group1', 'group2', 'group3', 'group4']
+        groups = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
     
     # 首先停止监控守护进程，避免它重启被停止的进程
     print("第1步：停止监控守护进程...")

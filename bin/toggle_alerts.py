@@ -33,7 +33,7 @@ def parse_args():
                         help='设置告警为开启(on)或关闭(off)')
     
     # 作用范围
-    parser.add_argument('--scope', '-c', choices=['global', 'group1', 'group2', 'group3', 'group4', 'all'],
+    parser.add_argument('--scope', '-c', choices=['global', 'group1', 'group2', 'group3', 'group4', 'group5', 'group6', 'all'],
                         default='all', help='设置配置文件范围：全局(global)、指定组或全部(all)')
     
     return parser.parse_args()
@@ -95,7 +95,7 @@ def main():
     if args.scope != 'global':
         groups = []
         if args.scope == 'all':
-            groups = ['group1', 'group2', 'group3', 'group4']
+            groups = ['group1', 'group2', 'group3', 'group4', 'group5', 'group6']
         else:
             groups = [args.scope]
         
