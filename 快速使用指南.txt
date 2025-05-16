@@ -65,33 +65,7 @@ cd site_monitor  # 先进入项目根目录
 python3 start_all.py
 ```
 
-### 3.2 在服务器环境中后台运行
-start_all.py脚本本身已经实现了守护进程功能，可以在SSH断开连接后继续运行，无需使用nohup命令：
-
-```bash
-cd site_monitor  # 先进入项目根目录
-python3 start_all.py
-```
-
-如果您仍然希望使用nohup命令（例如需要保存更详细的输出日志），可以使用以下命令：
-
-```bash
-cd site_monitor  # 先进入项目根目录
-nohup python3 start_all.py > nohup.out 2>&1 &
-```
-
-此命令说明：
-- nohup：表示命令忽略挂断信号，即使终端关闭也会继续运行
-- > nohup.out：将标准输出重定向到nohup.out文件
-- 2>&1：将错误输出也重定向到与标准输出相同的文件
-- &：在后台运行命令
-
-您可以通过以下命令查看运行日志：
-```bash
-tail -f nohup.out
-```
-
-### 3.3 启动单个监控组
+### 3.2 启动单个监控组
 直接运行单个监控组脚本时，如果SSH连接断开，进程会被终止：
 ```bash
 cd site_monitor  # 先进入项目根目录
@@ -119,13 +93,13 @@ python3 monitor_group1.py
 # 按Ctrl+B然后按D分离会话
 ```
 
-### 3.4 停止所有监控
+### 3.3 停止所有监控
 ```bash
 cd site_monitor  # 先进入项目根目录
 python3 stop_all.py
 ```
 
-### 3.5 查看系统状态
+### 3.4 查看系统状态
 ```bash
 cd site_monitor  # 先进入项目根目录
 python3 status.py
@@ -288,4 +262,4 @@ https://www.example.com/  ;示例站点1 - 后面可以加注释说明
 https://api.example.com/status  ;API状态检查点
 # 这行是注释，会被忽略
 http://internal.example.com/health  ;内部健康检查
-``` 
+```

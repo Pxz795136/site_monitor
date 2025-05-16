@@ -124,7 +124,7 @@ def daemonize():
         if utils.is_process_running(process.pid):
             print(f"\033[32m[✓] 守护进程创建成功!\033[0m PID: {process.pid}")
             print(f"\033[32m[✓] 启动日志将记录到: {daemon_log}\033[0m")
-            print("\033[32m[✓] 可以使用 'python3 bin/status.py' 查看监控状态\033[0m")
+            print("\033[32m[✓] 可以使用 'python3 status.py' 查看监控状态\033[0m")
             
             # 写入PID文件
             with open(pid_file, 'w') as f:
