@@ -1,55 +1,37 @@
-# WAF监控系统使用说明
+# WAF监控系统使用指南
 
-## 1. 准备环境
+## 1. 系统简介
+WAF监控系统用于监控多组URL的健康状态，当检测到URL不健康时自动发送告警通知。系统支持多组独立监控，可适应不同的监控需求和场景。
+
+## 2. 快速开始
+
+### 2.1 环境准备
 确保您的系统已经安装了 Python 3.6 或更高版本。
 通过以下命令安装所有依赖：
 
 ```bash
 cd site_monitor  # 先进入项目根目录
-python3 install.py
+python3 bin/install.py
 ```
 
 这个命令会自动安装必要的依赖库并创建所需的目录结构。
 
-## 2. 配置系统
-
-### 2.1 全局配置文件
-编辑 `conf/global.json` 文件，包含以下全局配置项：
+### 2.2 基本配置
+编辑 `conf/global.json` 文件，填写以下必要配置项：
 
 ```json
 {
   "monitor_groups": ["group1", "group2", "group3", "group4", "group5", "group6"],
-  "watchdog_check_interval": 120,
-  "watchdog_max_restarts": 10,
-  "startup_wait_time": 15,
   "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key",
-  "watchdog_wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key",
   "smtp_server": "smtp.example.com",
   "smtp_port": 587,
   "sender_email": "sender@example.com",
   "sender_password": "密码",
-  "receiver_email": "user1@example.com, user2@example.com",
-  "watchdog_receiver_email": "admin@example.com, support@example.com",
-  "enable_wechat_alert": true,
-  "enable_email_alert": true
+  "receiver_email": "user1@example.com, user2@example.com"
 }
 ```
 
-### 2.2 监控组配置
-每个监控组有独立的配置文件：`conf/group1.json`, `conf/group2.json` 等，内容示例：
-
-```json
-{
-  "group_name": "group1",
-  "monitor_interval": 60,
-  "unhealthy_threshold": 3,
-  "response_timeout": 2,
-  "enable_wechat_alert": true,
-  "enable_email_alert": true
-}
-```
-
-### 2.3 监控URL列表
+### 2.3 添加监控URL
 在 `conf/targets_group1.txt` 文件中添加要监控的URL，每行一个：
 
 ```
@@ -57,126 +39,150 @@ https://www.example.com/  ;示例站点1
 https://api.example.com/  ;示例站点2
 ```
 
-## 3. 运行系统
+## 3. 日常操作指南
 
-### 3.1 启动所有监控组
+### 3.1 启动系统
+启动所有监控组（start_all.py本身已实现守护进程功能，即使SSH连接断开也会继续运行）：
 ```bash
 cd site_monitor  # 先进入项目根目录
-python3 start_all.py
+python3 bin/start_all.py
 ```
 
-### 3.2 启动单个监控组
-直接运行单个监控组脚本时，如果SSH连接断开，进程会被终止：
+启动单个监控组：
 ```bash
 cd site_monitor  # 先进入项目根目录
-python3 monitor_group1.py  # 注意：SSH断开连接后会终止
+python3 bin/monitor_group1.py  # 注意：单个监控组脚本SSH断开连接后会终止
 ```
 
-要让单个监控组在SSH断开后继续运行，请使用nohup命令：
+### 3.2 后台运行
+如果需要启动单个监控组并在SSH断开后继续运行，请使用nohup命令：
 ```bash
 cd site_monitor  # 先进入项目根目录
-nohup python3 monitor_group1.py > logs/group1_startup.log 2>&1 &
+nohup python3 bin/monitor_group1.py > logs/group1_startup.log 2>&1 &
 ```
 
-您也可以使用screen或tmux工具来保持会话：
+使用screen保持会话：
 ```bash
-# 使用screen
-screen -S monitor_group1
+screen -S waf_monitor
 cd site_monitor  # 先进入项目根目录
-python3 monitor_group1.py
+python3 bin/monitor_group1.py
 # 按Ctrl+A然后按D分离会话
-
-# 使用tmux
-tmux new -s monitor_group1
-cd site_monitor  # 先进入项目根目录
-python3 monitor_group1.py
-# 按Ctrl+B然后按D分离会话
 ```
 
-### 3.3 停止所有监控
+### 3.3 停止系统
 ```bash
 cd site_monitor  # 先进入项目根目录
-python3 stop_all.py
+python3 bin/stop_all.py
 ```
 
 ### 3.4 查看系统状态
 ```bash
 cd site_monitor  # 先进入项目根目录
-python3 status.py
+python3 bin/status.py
 ```
 
-## 4. 日志说明
-
+### 3.5 查看日志
 系统日志位于 `logs` 目录下，每个监控组有独立的日志文件夹：
 
-- `monitor.log` - 监控状态日志
-- `health.log` - 健康状态日志
-- `alert.log` - 告警日志
-- `unhealthy.log` - 不健康状态日志
+```bash
+# 查看监控状态日志
+tail -f logs/group1/monitor.log
 
-日志每天午夜自动轮转，历史日志名称格式为 `log_type.log.yyyy-mm-dd`
+# 查看告警日志
+tail -f logs/group1/alert.log
 
-## 5. 告警机制
+# 查看不健康状态日志
+tail -f logs/group1/unhealthy.log
+```
 
-当URL连续不健康次数达到阈值时，系统会发送告警。URL被视为不健康的条件:
-- HTTP状态码不是200
-- 响应时间超过配置的超时时间
-- 连接异常或其他错误
+## 4. 配置管理
 
-告警支持两种方式：
-- 企业微信机器人（通过Webhook）
-- 邮件通知（支持多收件人）
+### 4.1 修改监控目标
+编辑对应的 `conf/targets_group*.txt` 文件，系统会自动加载最新的URL列表，无需重启。
 
-## 6. 常见问题
+### 4.2 调整监控频率
+修改对应组的配置文件 `conf/group*.json` 中的 `monitor_interval` 值（单位：秒）：
 
-### 6.1 如何修改监控目标？
-编辑对应的 `conf/targets_group*.txt` 文件，系统会自动加载最新的URL列表。
+```json
+{
+  "group_name": "group1",
+  "monitor_interval": 60,  // 修改此值调整监控频率
+  "unhealthy_threshold": 3,
+  "response_timeout": 2
+}
+```
 
-### 6.2 如何调整监控频率？
-修改对应组的配置文件中的 `monitor_interval` 值（单位：秒）。
+### 4.3 设置告警阈值
+修改对应组的配置文件中的 `unhealthy_threshold` 值，决定连续多少次不健康才发送告警。
 
-### 6.3 如何关闭某种告警方式？
-在配置文件中将 `enable_wechat_alert` 或 `enable_email_alert` 设置为 `false`。
+### 4.4 管理告警开关
+使用告警开关控制工具：
 
-### 6.4 系统稳定性说明
-系统最新版本（2025-05-14）对稳定性进行了重要增强，解决了之前可能在长时间运行后自动停止的问题。主要改进包括：
+```bash
+# 关闭所有组的企业微信告警
+python3 bin/toggle_alerts.py --alert-type wechat --state off
 
-- 监控线程由非守护线程执行，防止主进程退出导致监控线程终止
-- 增加了线程状态自动检测和恢复机制
-- 增强了异常处理，提高系统容错能力
-- 改进了错误日志记录，方便问题排查
+# 开启group1的邮件告警
+python3 bin/toggle_alerts.py --alert-type email --state on --scope group1
+```
 
-## 6.5 崩溃诊断与问题排查
+## 5. 问题排查指南
 
-系统提供了完善的崩溃诊断机制，可帮助您找出程序意外停止的原因。
+### 5.1 系统无法启动
+检查以下几点：
+- Python版本是否符合要求（3.6+）
+- 依赖包是否正确安装
+- 配置文件格式是否正确（JSON语法）
+- 日志目录权限是否正确
 
-### 6.5.1 崩溃日志查看
+### 5.2 监控意外停止
+系统具有自我修复能力，但如果仍然停止，可检查：
+- 查看崩溃日志了解原因
+- 检查系统资源使用情况
+- 确认网络连接状态
+- 执行重启命令：`python3 bin/stop_all.py && python3 bin/start_all.py`
 
+### 5.3 告警未发送
+检查以下几点：
+- 确认告警配置（微信webhook或邮件配置）是否正确
+- 查看告警日志是否有错误记录
+- 检查告警开关是否打开
+- 尝试手动发送测试告警
+
+### 5.4 资源使用过高
+如果系统资源使用过高，可以：
+- 减少监控URL数量
+- 增加监控间隔时间
+- 将URL分散到多个监控组
+- 增加服务器资源配置
+
+## 6. 崩溃诊断
+
+### 6.1 崩溃日志查看
 当系统意外停止时，会在以下位置记录崩溃信息：
 - `logs/<group>/crash.log` - 崩溃相关的日志
 - `logs/<group>/crashes/` - 详细的崩溃报告（JSON格式）
 - `data/last_activity_<group>.json` - 最后活动状态
 
-### 6.5.2 使用崩溃报告工具
-
+### 6.2 使用崩溃报告工具
 提供了专门的崩溃报告查询工具：
 
 ```bash
 cd site_monitor  # 先进入项目根目录
 # 列出所有崩溃记录
-python3 crash_report.py group1
+python3 bin/crash_report.py group1
 
 # 查看最近一次崩溃
-python3 crash_report.py group1 --last
+python3 bin/crash_report.py group1 --last
 
 # 查看特定崩溃记录详情
-python3 crash_report.py group1 1
+python3 bin/crash_report.py group1 1
 
 # 查看所有组的崩溃信息
-python3 crash_report.py all
+python3 bin/crash_report.py all
 ```
 
-### 6.5.3 常见崩溃原因及解决方案
+### 6.3 常见崩溃原因及解决方案
 
 1. **内存不足**：
    - 症状：崩溃报告中显示高内存使用率
@@ -194,15 +200,7 @@ python3 crash_report.py all
    - 症状：崩溃类型为"signal"
    - 解决：检查系统日志，确认是否有OOM或其他系统级终止
 
-如果系统依然出现停止运行的情况，可执行以下命令重启系统：
-```bash 
-cd site_monitor  # 先进入项目根目录
-python3 stop_all.py && python3 start_all.py
-```
-
-## 7. 分组管理最佳实践
-
-系统支持6个独立的监控组（group1-group6），建议根据以下原则进行URL分组：
+## 7. 运维最佳实践
 
 ### 7.1 分组原则
 - 每组URL数量建议控制在30个以内，避免单个组负载过高
@@ -221,40 +219,46 @@ https://www.example.com/  ;集群1-132.122.249.6&7(group1)
 ```
 注释内容会在告警信息中显示，便于快速定位问题。
 
-## 附录：配置参数说明
+### 7.4 日志维护
+系统采用日志轮转机制，每天午夜自动轮转日志文件：
+- 当前日志格式为：`log_type.log`
+- 历史日志格式为：`log_type.log.yyyy-mm-dd`
+- 系统保留30天的历史日志，超期自动清理
 
-### A1. 全局配置参数 (conf/global.json)
+## 8. 配置参数参考
 
-| 参数名 | 说明 | 示例值 |
-|--------|------|--------|
-| monitor_groups | 监控组列表，指定哪些组需要启动（数组类型，包含字符串元素） | ["group1", "group2", "group3", "group4", "group5", "group6"] |
-| watchdog_check_interval | 监控进程检查间隔，单位秒（整数类型） | 120 |
-| watchdog_max_restarts | 监控进程最大重启次数（整数类型） | 10 |
-| startup_wait_time | 启动等待时间，单位秒（整数类型） | 15 |
-| wechat_webhook_url | 企业微信机器人的Webhook地址（字符串类型，必须是有效的URL） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key" |
-| watchdog_wechat_webhook_url | 守护进程专用的企业微信Webhook地址（字符串类型，必须是有效的URL） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key" |
-| smtp_server | 邮件服务器地址（字符串类型） | "smtp.example.com" |
-| smtp_port | 邮件服务器端口（整数类型，常见值为25, 465, 587） | 587 |
-| sender_email | 发件人邮箱（字符串类型，必须是有效的邮箱格式） | "sender@example.com" |
-| sender_password | 发件人密码（字符串类型） | "密码" |
-| receiver_email | 收件人邮箱，多个收件人用逗号或分号分隔（字符串类型） | "user1@example.com, user2@example.com" |
-| watchdog_receiver_email | 守护进程专用的接收邮箱，多个收件人用逗号或分号分隔（字符串类型） | "admin@example.com, support@example.com" |
-| enable_wechat_alert | 是否启用企业微信告警（布尔类型，只能是true或false） | true |
-| enable_email_alert | 是否启用邮件告警（布尔类型，只能是true或false） | true |
-
-### A2. 监控组配置参数 (conf/group*.json)
+### 8.1 全局配置参数 (conf/global.json)
 
 | 参数名 | 说明 | 示例值 |
 |--------|------|--------|
-| group_name | 监控组名称（字符串类型） | "group1" |
-| monitor_interval | 监控间隔时间，单位秒（整数类型） | 60 |
-| unhealthy_threshold | 连续不健康次数阈值，达到此值时发送告警（整数类型） | 3 |
-| response_timeout | 响应超时时间，单位秒（整数或浮点数类型） | 2 |
-| wechat_webhook_url | 企业微信机器人的Webhook地址（可选，覆盖全局配置）（字符串类型，必须是有效的URL） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
-| enable_wechat_alert | 该组是否启用企业微信告警（布尔类型，只能是true或false） | true |
-| enable_email_alert | 该组是否启用邮件告警（布尔类型，只能是true或false） | true |
+| monitor_groups | 监控组列表，指定哪些组需要启动 | ["group1", "group2", "group3", "group4"] |
+| watchdog_check_interval | 监控进程检查间隔，单位秒 | 120 |
+| watchdog_max_restarts | 监控进程最大重启次数 | 10 |
+| startup_wait_time | 启动等待时间，单位秒 | 15 |
+| wechat_webhook_url | 企业微信机器人的Webhook地址 | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key" |
+| watchdog_wechat_webhook_url | 守护进程专用的企业微信Webhook地址 | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key" |
+| smtp_server | 邮件服务器地址 | "smtp.example.com" |
+| smtp_port | 邮件服务器端口 | 587 |
+| sender_email | 发件人邮箱 | "sender@example.com" |
+| sender_password | 发件人密码 | "密码" |
+| receiver_email | 收件人邮箱，多个收件人用逗号或分号分隔 | "user1@example.com, user2@example.com" |
+| watchdog_receiver_email | 守护进程专用的接收邮箱 | "admin@example.com, support@example.com" |
+| enable_wechat_alert | 是否启用企业微信告警 | true |
+| enable_email_alert | 是否启用邮件告警 | true |
 
-### A3. URL格式说明 (conf/targets_group*.txt)
+### 8.2 监控组配置参数 (conf/group*.json)
+
+| 参数名 | 说明 | 示例值 |
+|--------|------|--------|
+| group_name | 监控组名称 | "group1" |
+| monitor_interval | 监控间隔时间，单位秒 | 60 |
+| unhealthy_threshold | 连续不健康次数阈值，达到此值时发送告警 | 3 |
+| response_timeout | 响应超时时间，单位秒 | 2 |
+| wechat_webhook_url | 企业微信机器人的Webhook地址（可选，覆盖全局配置） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
+| enable_wechat_alert | 该组是否启用企业微信告警 | true |
+| enable_email_alert | 该组是否启用邮件告警 | true |
+
+### 8.3 URL格式说明 (conf/targets_group*.txt)
 
 每行一个URL，支持添加注释：
 ```
