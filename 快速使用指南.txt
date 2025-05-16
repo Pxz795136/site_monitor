@@ -5,7 +5,8 @@
 通过以下命令安装所有依赖：
 
 ```bash
-python bin/install.py
+cd site_monitor  # 先进入项目根目录
+python3 install.py
 ```
 
 这个命令会自动安装必要的依赖库并创建所需的目录结构。
@@ -17,13 +18,20 @@ python bin/install.py
 
 ```json
 {
-  "monitor_groups": ["group1", "group2", "group3", "group4"],
+  "monitor_groups": ["group1", "group2", "group3", "group4", "group5", "group6"],
+  "watchdog_check_interval": 120,
+  "watchdog_max_restarts": 10,
+  "startup_wait_time": 15,
   "wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key",
+  "watchdog_wechat_webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key",
   "smtp_server": "smtp.example.com",
   "smtp_port": 587,
   "sender_email": "sender@example.com",
   "sender_password": "密码",
-  "receiver_email": "user1@example.com, user2@example.com"
+  "receiver_email": "user1@example.com, user2@example.com",
+  "watchdog_receiver_email": "admin@example.com, support@example.com",
+  "enable_wechat_alert": true,
+  "enable_email_alert": true
 }
 ```
 
@@ -53,14 +61,23 @@ https://api.example.com/  ;示例站点2
 
 ### 3.1 启动所有监控组
 ```bash
-python bin/start_all.py
+cd site_monitor  # 先进入项目根目录
+python3 start_all.py
 ```
 
 ### 3.2 在服务器环境中后台运行
-在服务器环境中，建议使用以下命令让系统在后台运行，即使用户退出SSH连接后也能继续执行：
+start_all.py脚本本身已经实现了守护进程功能，可以在SSH断开连接后继续运行，无需使用nohup命令：
 
 ```bash
-nohup python3 bin/start_all.py > nohup.out 2>&1 &
+cd site_monitor  # 先进入项目根目录
+python3 start_all.py
+```
+
+如果您仍然希望使用nohup命令（例如需要保存更详细的输出日志），可以使用以下命令：
+
+```bash
+cd site_monitor  # 先进入项目根目录
+nohup python3 start_all.py > nohup.out 2>&1 &
 ```
 
 此命令说明：
@@ -74,24 +91,44 @@ nohup python3 bin/start_all.py > nohup.out 2>&1 &
 tail -f nohup.out
 ```
 
-您也可以将输出重定向到logs目录下的文件：
+### 3.3 启动单个监控组
+直接运行单个监控组脚本时，如果SSH连接断开，进程会被终止：
 ```bash
-nohup python3 bin/start_all.py > logs/startup.log 2>&1 &
+cd site_monitor  # 先进入项目根目录
+python3 monitor_group1.py  # 注意：SSH断开连接后会终止
 ```
 
-### 3.3 启动单个监控组
+要让单个监控组在SSH断开后继续运行，请使用nohup命令：
 ```bash
-python bin/monitor_group1.py
+cd site_monitor  # 先进入项目根目录
+nohup python3 monitor_group1.py > logs/group1_startup.log 2>&1 &
+```
+
+您也可以使用screen或tmux工具来保持会话：
+```bash
+# 使用screen
+screen -S monitor_group1
+cd site_monitor  # 先进入项目根目录
+python3 monitor_group1.py
+# 按Ctrl+A然后按D分离会话
+
+# 使用tmux
+tmux new -s monitor_group1
+cd site_monitor  # 先进入项目根目录
+python3 monitor_group1.py
+# 按Ctrl+B然后按D分离会话
 ```
 
 ### 3.4 停止所有监控
 ```bash
-python bin/stop_all.py
+cd site_monitor  # 先进入项目根目录
+python3 stop_all.py
 ```
 
 ### 3.5 查看系统状态
 ```bash
-python bin/status.py
+cd site_monitor  # 先进入项目根目录
+python3 status.py
 ```
 
 ## 4. 日志说明
@@ -151,17 +188,18 @@ python bin/status.py
 提供了专门的崩溃报告查询工具：
 
 ```bash
+cd site_monitor  # 先进入项目根目录
 # 列出所有崩溃记录
-python bin/crash_report.py group1
+python3 crash_report.py group1
 
 # 查看最近一次崩溃
-python bin/crash_report.py group1 --last
+python3 crash_report.py group1 --last
 
 # 查看特定崩溃记录详情
-python bin/crash_report.py group1 1
+python3 crash_report.py group1 1
 
 # 查看所有组的崩溃信息
-python bin/crash_report.py all
+python3 crash_report.py all
 ```
 
 ### 6.5.3 常见崩溃原因及解决方案
@@ -184,8 +222,30 @@ python bin/crash_report.py all
 
 如果系统依然出现停止运行的情况，可执行以下命令重启系统：
 ```bash 
-python bin/stop_all.py && python bin/start_all.py
+cd site_monitor  # 先进入项目根目录
+python3 stop_all.py && python3 start_all.py
 ```
+
+## 7. 分组管理最佳实践
+
+系统支持6个独立的监控组（group1-group6），建议根据以下原则进行URL分组：
+
+### 7.1 分组原则
+- 每组URL数量建议控制在30个以内，避免单个组负载过高
+- 将相似类型或相关联的URL放在同一组
+- 根据重要程度分组，便于设置不同的监控频率和告警策略
+
+### 7.2 资源配置建议
+- 对于32核服务器，建议每组最多30个URL
+- 对于16核服务器，建议每组最多20个URL
+- 监控间隔不建议低于30秒，以避免过度消耗资源
+
+### 7.3 URL注释格式
+在targets文件中，可以使用分号添加URL注释，格式如下：
+```
+https://www.example.com/  ;集群1-132.122.249.6&7(group1)
+```
+注释内容会在告警信息中显示，便于快速定位问题。
 
 ## 附录：配置参数说明
 
@@ -193,35 +253,32 @@ python bin/stop_all.py && python bin/start_all.py
 
 | 参数名 | 说明 | 示例值 |
 |--------|------|--------|
-| monitor_groups | 监控组列表，指定哪些组需要启动 | ["group1", "group2", "group3", "group4"] |
-| wechat_webhook_url | 企业微信机器人的Webhook地址 | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
-| site_wechat_webhook_url | 站点监控专用的企业微信地址(可选) | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
-| process_wechat_webhook_url | 进程监控专用的企业微信地址(可选) | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
-| smtp_server | 邮件服务器地址 | "smtp.example.com" |
-| smtp_port | 邮件服务器端口 | 587 |
-| sender_email | 发件人邮箱 | "sender@example.com" |
-| sender_password | 发件人密码 | "password" |
-| receiver_email | 收件人邮箱，多个收件人用逗号或分号分隔 | "user1@example.com, user2@example.com" |
-| site_receiver_email | 站点监控专用收件人邮箱(可选) | "alert@example.com" |
-| process_receiver_email | 进程监控专用收件人邮箱(可选) | "admin@example.com" |
-| enable_wechat_alert | 是否启用企业微信告警 | true |
-| enable_email_alert | 是否启用邮件告警 | true |
-| enable_site_wechat_alert | 是否启用站点监控专用企业微信告警 | true |
-| enable_process_wechat_alert | 是否启用进程监控专用企业微信告警 | true |
-| check_interval | 守护进程检查间隔，单位秒 | 120 |
-| max_restart_count | 最大重启尝试次数 | 3 |
+| monitor_groups | 监控组列表，指定哪些组需要启动（数组类型，包含字符串元素） | ["group1", "group2", "group3", "group4", "group5", "group6"] |
+| watchdog_check_interval | 监控进程检查间隔，单位秒（整数类型） | 120 |
+| watchdog_max_restarts | 监控进程最大重启次数（整数类型） | 10 |
+| startup_wait_time | 启动等待时间，单位秒（整数类型） | 15 |
+| wechat_webhook_url | 企业微信机器人的Webhook地址（字符串类型，必须是有效的URL） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key" |
+| watchdog_wechat_webhook_url | 守护进程专用的企业微信Webhook地址（字符串类型，必须是有效的URL） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=您的key" |
+| smtp_server | 邮件服务器地址（字符串类型） | "smtp.example.com" |
+| smtp_port | 邮件服务器端口（整数类型，常见值为25, 465, 587） | 587 |
+| sender_email | 发件人邮箱（字符串类型，必须是有效的邮箱格式） | "sender@example.com" |
+| sender_password | 发件人密码（字符串类型） | "密码" |
+| receiver_email | 收件人邮箱，多个收件人用逗号或分号分隔（字符串类型） | "user1@example.com, user2@example.com" |
+| watchdog_receiver_email | 守护进程专用的接收邮箱，多个收件人用逗号或分号分隔（字符串类型） | "admin@example.com, support@example.com" |
+| enable_wechat_alert | 是否启用企业微信告警（布尔类型，只能是true或false） | true |
+| enable_email_alert | 是否启用邮件告警（布尔类型，只能是true或false） | true |
 
 ### A2. 监控组配置参数 (conf/group*.json)
 
 | 参数名 | 说明 | 示例值 |
 |--------|------|--------|
-| group_name | 监控组名称 | "group1" |
-| monitor_interval | 监控间隔时间，单位秒 | 60 |
-| unhealthy_threshold | 连续不健康次数阈值，达到此值时发送告警 | 3 |
-| response_timeout | 响应超时时间，单位秒 | 2 |
-| wechat_webhook_url | 企业微信机器人的Webhook地址（可选，覆盖全局配置） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
-| enable_wechat_alert | 该组是否启用企业微信告警 | true |
-| enable_email_alert | 该组是否启用邮件告警 | true |
+| group_name | 监控组名称（字符串类型） | "group1" |
+| monitor_interval | 监控间隔时间，单位秒（整数类型） | 60 |
+| unhealthy_threshold | 连续不健康次数阈值，达到此值时发送告警（整数类型） | 3 |
+| response_timeout | 响应超时时间，单位秒（整数或浮点数类型） | 2 |
+| wechat_webhook_url | 企业微信机器人的Webhook地址（可选，覆盖全局配置）（字符串类型，必须是有效的URL） | "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx" |
+| enable_wechat_alert | 该组是否启用企业微信告警（布尔类型，只能是true或false） | true |
+| enable_email_alert | 该组是否启用邮件告警（布尔类型，只能是true或false） | true |
 
 ### A3. URL格式说明 (conf/targets_group*.txt)
 

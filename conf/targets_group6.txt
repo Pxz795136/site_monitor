@@ -1,1 +1,3 @@
-https://example.com/group6   ;groud6
+http://d.gd.189.cn/esignwzh/n/client/filedetail  ;人民中集群4-132.122.249.156&157(groud6)
+https://gd.189.cn/css/common.css?v5  ;人民中集群3-132.122.249.10&11(groud6)
+https://m.gd.189.cn/include/wtdfk13.png  ;人民中集群3-132.122.249.10&11(groud6)
